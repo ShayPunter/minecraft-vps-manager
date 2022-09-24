@@ -35,6 +35,12 @@ class StartServer implements ShouldQueue
      */
     public function handle()
     {
+
+        $server_exists = ServerProgress::where('server_id', '=', $this->servername)->get()->first();
+        if (!empty($server_exists)) {
+            return 'server already exists';
+        }
+
         $serverprogress = new ServerProgress();
         $serverprogress->server_id = $this->servername;
         $serverprogress->progress = 1;
