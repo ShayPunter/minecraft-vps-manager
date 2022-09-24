@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use App\Models\Server;
+use App\Models\ServerProgress;
 use xPaw\MinecraftPing;
 use xPaw\MinecraftPingException;
 use phpseclib3\Net\SSH2;
@@ -39,11 +40,30 @@ class check_server_status extends Command
             try {
                 $query = new MinecraftPing($server->ip_address, 25565);
 
+                if ($server->status != 'online') {
+                    $server->status = 'online';
+                    $server->save();
+
+                    $serverprogress = ServerProgress::where('server_id', '=', $server->server_id)->get()->first();
+                    $serverprogress->progress = 100;
+                    $serverprogress->save();
+                }
+
                 if ($query->Query()['players']['online'] == 0) {
                     $server->last_activity = $server->last_activity + 1;
                     $server->save();
                     $this->info('no players online');
                 } else {
+
+                    if ($server->status != 'online') {
+                        $server->status = 'online';
+                        $server->save();
+
+                        $serverprogress = ServerProgress::where('server_id', '=', $server->server_id)->get()->first();
+                        $serverprogress->progress = 100;
+                        $serverprogress->save();
+                    }
+
                     $server->last_activity = 1;
                     $server->save();
                     $this->info('players online');
