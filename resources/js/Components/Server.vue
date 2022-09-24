@@ -31,9 +31,9 @@
             </div>
             <div v-if="status === 'startup'">
                 <div class="-mt-px flex divide-x divide-gray-200">
-                    <div class="-ml-px w-0 flex-1 flex">
+                    <div class="-ml-px mb-2 w-0 flex-1 flex">
                         <div
-                            class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700"
+                            class="w-2/3 mx-auto pb-2 bg-gray-200 rounded-full h-2.5 dark:bg-gray-700"
                         >
                             <div
                                 id="progressbar"
