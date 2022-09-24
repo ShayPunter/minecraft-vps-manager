@@ -59,3 +59,15 @@ Route::middleware([
         return Inertia::render('Dashboard');
     })->name('dashboard');
 });
+
+// For local development testing
+if (env('APP_ENV') == 'local') {
+    Route::get('/test', function () {
+        return Inertia::render('Test', [
+            'canLogin' => Route::has('login'),
+            'canRegister' => Route::has('register'),
+            'laravelVersion' => Application::VERSION,
+            'phpVersion' => PHP_VERSION,
+        ]);
+    });
+}
