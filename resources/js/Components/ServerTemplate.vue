@@ -75,24 +75,25 @@ export default {
 
             setTimeout(function () {
                 document.getElementById("progressbar").style.width = "30%";
-            }, 5000);
+            }, 2000);
 
             setTimeout(function () {
                 document.getElementById("progressbar").style.width = "50%";
-            }, 8000);
+            }, 5000);
 
             setTimeout(function () {
                 document.getElementById("progressbar").style.width = "100%";
-            }, 12000);
+            }, 9000);
 
             setTimeout(function () {
+                this.startingserver = false;
+                this.status = "online";
+                this.ip = "192.168.0.1";
                 document
                     .getElementById(id)
                     .classList.remove("border-yellow-500");
                 document.getElementById(id).classList.add("border-green-500");
-                this.status = "online";
-                this.ip = "192.168.0.1";
-            }, 13000);
+            }, 10000);
         },
     },
 };
