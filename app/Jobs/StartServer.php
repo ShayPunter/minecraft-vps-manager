@@ -142,10 +142,10 @@ class StartServer implements ShouldQueue
         $serverprogress->save();
 
         // Run commands and start up the server
-        $ssh->exec('screen -dmS server');
-        $ssh->exec('screen -S server -X stuff \'cd ../mnt/Minecraft/' . $this->servername . '\n\'');
+        $ssh->exec('screen -dmS ' . $this->servername);
+        $ssh->exec('screen -S '. $this->servername .' -X stuff \'cd ../mnt/Minecraft/' . $this->servername . '\n\'');
         sleep(1);
-        $ssh->exec('screen -S server -X stuff \'./run.sh\n\'');
+        $ssh->exec('screen -S '. $this->servername .' -X stuff \'./run.sh\n\'');
 
         $serverprogress->progress = 70;
         $serverprogress->save();

@@ -87,7 +87,7 @@ class check_server_status extends Command
                         throw new \Exception('Login failed');
 
                     sleep(2);
-                    $ssh->exec('screen -S server -X stuff \'stop\n\'');
+                    $ssh->exec('screen -S '. $server->server_id .' -X stuff \'stop\n\'');
                     sleep(60);
 
                     // Http client
