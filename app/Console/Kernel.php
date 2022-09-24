@@ -6,6 +6,7 @@ use App\Http\Controllers\ServerMonitorController;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use App\Models\Server;
+use App\Models\ServerProgress;
 use xPaw\MinecraftPing;
 use xPaw\MinecraftPingException;
 use phpseclib3\Net\SSH2;
@@ -66,6 +67,8 @@ class Kernel extends ConsoleKernel
                     // Send request to setup a Linode 8GB Dedicated
                     $response = $client->request('DELETE', 'https://api.linode.com/v4/linode/instances/' . $server->id);
 
+                    $sprg = ServerProgress::where('server_id', '=', $server->server_id)->get()->first();
+                    ServerProgress::destroy($sprg->id);
                     Server::destroy($server->id);
                 }
 
