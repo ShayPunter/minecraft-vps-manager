@@ -3,6 +3,8 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use phpseclib3\Net\SSH2;
+use Symfony\Component\HttpClient\HttpClient;
 
 /*
 |--------------------------------------------------------------------------
@@ -23,6 +25,9 @@ Route::get('/', function () {
         'phpVersion' => PHP_VERSION,
     ]);
 });
+
+Route::get('/startserver/{servername}', [\App\Http\Controllers\LinodeController::class, 'create_server']);
+Route::get('/check-server-status', [\App\Http\Controllers\ServerMonitorController::class, 'getOnlinePlayers'])->name('check-server-status');
 
 Route::middleware([
     'auth:sanctum',

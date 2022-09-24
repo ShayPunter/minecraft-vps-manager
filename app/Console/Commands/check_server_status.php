@@ -1,28 +1,38 @@
 <?php
 
-namespace App\Console;
+namespace App\Console\Commands;
 
-use App\Http\Controllers\ServerMonitorController;
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
+use Illuminate\Console\Command;
 use App\Models\Server;
 use xPaw\MinecraftPing;
 use xPaw\MinecraftPingException;
 use phpseclib3\Net\SSH2;
 use Symfony\Component\HttpClient\HttpClient;
 
-class Kernel extends ConsoleKernel
+class check_server_status extends Command
 {
     /**
-     * Define the application's command schedule.
+     * The name and signature of the console command.
      *
-     * @param  \Illuminate\Console\Scheduling\Schedule  $schedule
-     * @return void
+     * @var string
      */
-    protected function schedule(Schedule $schedule)
+    protected $signature = 'server:heartbeat';
+
+    /**
+     * The console command description.
+     *
+     * @var string
+     */
+    protected $description = 'Checks the servers heartbeats';
+
+    /**
+     * Execute the console command.
+     *
+     * @return int
+     */
+    public function handle()
     {
-        $schedule->call(function() {
-            $servers = Server::all();
+        $servers = Server::all();
 
         foreach ($servers as $server) {
 
@@ -32,9 +42,11 @@ class Kernel extends ConsoleKernel
                 if ($query->Query()['players']['online'] == 0) {
                     $server->last_activity = $server->last_activity + 1;
                     $server->save();
+                    $this->info('no players online');
                 } else {
                     $server->last_activity = 1;
                     $server->save();
+                    $this->info('players online');
                 }
 
                 if ($server->last_activity >= 15) {
@@ -72,20 +84,8 @@ class Kernel extends ConsoleKernel
             } catch (MinecraftPingException $e) {
                 $server->last_activity = $server->last_activity + 1;
                 $server->save();
+                $this->info('an error: HB: ' . $server->last_activity);
             }
         }
-        })->everyMinute();
-    }
-
-    /**
-     * Register the commands for the application.
-     *
-     * @return void
-     */
-    protected function commands()
-    {
-        $this->load(__DIR__.'/Commands');
-
-        require base_path('routes/console.php');
     }
 }

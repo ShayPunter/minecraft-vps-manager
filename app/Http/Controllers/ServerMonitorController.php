@@ -1,28 +1,44 @@
 <?php
 
-namespace App\Console;
+namespace App\Http\Controllers;
 
-use App\Http\Controllers\ServerMonitorController;
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use App\Models\Server;
 use xPaw\MinecraftPing;
 use xPaw\MinecraftPingException;
 use phpseclib3\Net\SSH2;
 use Symfony\Component\HttpClient\HttpClient;
 
-class Kernel extends ConsoleKernel
+class ServerMonitorController extends Controller
 {
     /**
-     * Define the application's command schedule.
+     * Check to see if the server is online or not & update database accordingly
      *
-     * @param  \Illuminate\Console\Scheduling\Schedule  $schedule
+     * @param $server_ip
      * @return void
      */
-    protected function schedule(Schedule $schedule)
-    {
-        $schedule->call(function() {
-            $servers = Server::all();
+    public function check_minecraft_status($server_ip) {
+        $server = Server::where('server_ip', '=', $server_ip)->get()->first();
+
+        try {
+            $query = new MinecraftPing($server_ip, 25565);
+            $query->Query();
+
+            $server->status = "online";
+            $server->save();
+        } catch (MinecraftPingException $e) {
+            $server->status = "starting_up";
+            $server->save();
+        }
+
+    }
+
+    /**
+     * Check if the servers have any players on and update activity accordingly so
+     *
+     * @return void
+     */
+    public function check_if_servers_active() {
+        $servers = Server::all();
 
         foreach ($servers as $server) {
 
@@ -30,10 +46,10 @@ class Kernel extends ConsoleKernel
                 $query = new MinecraftPing($server->ip_address, 25565);
 
                 if ($query->Query()['players']['online'] == 0) {
-                    $server->last_activity = $server->last_activity + 1;
+                    $server->last_activity = $server->last_activity++;
                     $server->save();
                 } else {
-                    $server->last_activity = 1;
+                    $server->last_activity = 0;
                     $server->save();
                 }
 
@@ -66,26 +82,14 @@ class Kernel extends ConsoleKernel
                     // Send request to setup a Linode 8GB Dedicated
                     $response = $client->request('DELETE', 'https://api.linode.com/v4/linode/instances/' . $server->id);
 
-                    Server::destroy($server->id);
+                    $server->delete();
                 }
 
             } catch (MinecraftPingException $e) {
-                $server->last_activity = $server->last_activity + 1;
+                $server->last_activity = $server->last_activity++;
                 $server->save();
             }
+
         }
-        })->everyMinute();
-    }
-
-    /**
-     * Register the commands for the application.
-     *
-     * @return void
-     */
-    protected function commands()
-    {
-        $this->load(__DIR__.'/Commands');
-
-        require base_path('routes/console.php');
     }
 }

@@ -18,6 +18,8 @@ return new class extends Migration
             $table->string('ip_address', 45)->nullable();
             $table->string('server_id');
             $table->integer('last_activity');
+            $table->string('status');
+            $table->timestamps();
         });
     }
 
