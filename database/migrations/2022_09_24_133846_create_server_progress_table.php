@@ -17,7 +17,7 @@ return new class extends Migration
             $table->id();
             $table->timestamps();
             $table->string('ip_address', 45)->nullable();
-            $table->string('server_id');
+            $table->string('server_id')->unique();
             $table->integer('progress');
         });
     }

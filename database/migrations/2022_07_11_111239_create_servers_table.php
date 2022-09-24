@@ -16,7 +16,7 @@ return new class extends Migration
         Schema::create('servers', function (Blueprint $table) {
             $table->string('id')->primary();
             $table->string('ip_address', 45)->nullable();
-            $table->string('server_id');
+            $table->string('server_id')->unique();
             $table->integer('last_activity');
             $table->string('status');
             $table->timestamps();
