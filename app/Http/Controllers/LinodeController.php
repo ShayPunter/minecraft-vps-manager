@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\LinodeType;
 use App\Jobs\StartServer;
 use App\Models\Server;
 use Symfony\Component\HttpClient\HttpClient;
@@ -38,7 +39,7 @@ class LinodeController extends Controller
                 'image' => 'linode/ubuntu22.04',
                 'region' => 'eu-central',
                 'root_pass' => env('LINODE_PASS'),
-                'type' => 'g6-dedicated-4',
+                'type' => LinodeType::DEDICATED_LINODE_8GB,
                 'stackscript_id' => 1024018,
                 'label' => 'mc-' . $servername . '-' . $this->generateRandomString()]
         ]);
