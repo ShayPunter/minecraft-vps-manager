@@ -47,6 +47,17 @@ Route::middleware([
     })->name('dashboard');
 });
 
+// Admin Routes
+Route::middleware([
+    'auth:sanctum',
+    config('jetstream.auth_session'),
+    'verified', 'isadmin'
+])->group(function () {
+    Route::get('/admin/dashboard', function () {
+        return Inertia::render('Admin/Dashboard');
+    })->name('admin-dashboard');
+});
+
 // For local development testing
 if (env('APP_ENV') == 'local') {
     Route::get('/test', function () {

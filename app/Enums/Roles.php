@@ -2,7 +2,7 @@
 
 namespace App\Enums;
 
-enum LinodeRegion: string
+enum Roles: string
 {
     case ADMIN = "admin";
     case DEFAULT = "default";
