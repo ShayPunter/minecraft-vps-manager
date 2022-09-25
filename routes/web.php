@@ -29,6 +29,11 @@ Route::get('/', function () {
     ]);
 });
 
+Route::prefix('/server')->group(function() {
+    Route::get('/{servername}', [\App\Http\Controllers\LinodeController::class, 'get_server'])->name('get-server');
+    Route::get('/provision/{servername}', [\App\Http\Controllers\LinodeController::class, 'create_server'])->name('provision-server');
+});
+
 Route::get('/startserver/{servername}', [\App\Http\Controllers\LinodeController::class, 'create_server'])->name('startserver');
 Route::get('/check-server-status', [\App\Http\Controllers\ServerMonitorController::class, 'getOnlinePlayers'])->name('check-server-status');
 Route::get('/serverprogress/{servername}', function ($servername) {

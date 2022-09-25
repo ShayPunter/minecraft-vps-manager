@@ -40,33 +40,23 @@ class check_server_status extends Command
             try {
                 $query = new MinecraftPing($server->ip_address, 25565);
 
-                if ($server->status != 'online') {
-                    $server->status = 'online';
-                    $server->save();
-
-                    $serverprogress = ServerProgress::where('server_id', '=', $server->server_id)->get()->first();
-                    $serverprogress->progress = 100;
-                    $serverprogress->save();
-                }
-
                 if ($query->Query()['players']['online'] == 0) {
-                    $server->last_activity = $server->last_activity + 1;
-                    $server->save();
-                    $this->info('no players online');
-                } else {
 
-                    if ($server->status != 'online') {
+                    if ($server->status == 'startup') {
                         $server->status = 'online';
                         $server->save();
+                    }
 
-                        $serverprogress = ServerProgress::where('server_id', '=', $server->server_id)->get()->first();
-                        $serverprogress->progress = 100;
-                        $serverprogress->save();
+                    $server->last_activity = $server->last_activity + 1;
+                    $server->save();
+                } else {
+                    if ($server->status == 'startup') {
+                        $server->status = 'online';
+                        $server->save();
                     }
 
                     $server->last_activity = 1;
                     $server->save();
-                    $this->info('players online');
                 }
 
                 if ($server->last_activity >= 15) {
@@ -87,7 +77,7 @@ class check_server_status extends Command
                         throw new \Exception('Login failed');
 
                     sleep(2);
-                    $ssh->exec('screen -S '. $server->server_id .' -X stuff \'stop\n\'');
+                    $ssh->exec('screen -S server -X stuff \'stop\n\'');
                     sleep(60);
 
                     // Http client
@@ -104,7 +94,6 @@ class check_server_status extends Command
             } catch (MinecraftPingException $e) {
                 $server->last_activity = $server->last_activity + 1;
                 $server->save();
-                $this->info('an error: HB: ' . $server->last_activity);
             }
         }
     }

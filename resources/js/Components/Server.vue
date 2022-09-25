@@ -29,14 +29,14 @@
                     </div>
                 </div>
             </div>
-            <div v-if="status === 'startup'">
+            <div v-if="status !== 'offline' && status !== 'online'">
                 <div class="-mt-px flex divide-x divide-gray-200">
                     <div class="-ml-px mb-2 w-0 flex-1 flex">
                         <div
                             class="w-2/3 mx-auto pb-2 bg-gray-200 rounded-full h-2.5 dark:bg-gray-700"
                         >
                             <div
-                                id="progressbar"
+                                id="porbar"
                                 class="bg-green-600 h-2.5 rounded-full"
                                 style="width: 1%"
                             ></div>
@@ -56,7 +56,6 @@ export default {
 
     data() {
         return {
-            startingserver: false,
             id: this.id,
             name: this.name,
             img: this.img,
@@ -68,23 +67,71 @@ export default {
         };
     },
 
-    created() {
-        axios.get(route("serverstatus", this.id)).then((res) => {
-            if (res.data.error) {
-                return;
+    mounted() {
+        axios.get(route("get-server", this.id)).then((response) => {
+            if (response.data.error) {
+                this.status = "offline";
+            } else {
+                this.status = response.data.status;
             }
 
-            if (res.data.status === "starting_up") {
-                document
-                    .getElementById(this.id)
-                    .classList.remove("border-red-500");
-                document
-                    .getElementById(this.id)
-                    .classList.add("border-yellow-500");
-                this.status = "startup";
-                this.timer2 = setInterval(() => {
-                    axios.get(route("serverprogress", this.id)).then((res) => {
-                        if (res.data.ticker === 100) {
+            // // If status is online, display IP and turn to green
+            // if (this.status === "online") {
+            //     document
+            //         .getElementById(this.id)
+            //         .classList.remove("border-red-500");
+            //     document
+            //         .getElementById(this.id)
+            //         .classList.add("border-green-500");
+            //     this.ip = response.data.ip_address;
+            // }
+
+            // // If status isn't offline or online, then provision check
+            // if (this.status === "offline" || this.status === "online") {
+            //     return;
+            // }
+
+            // Setup timer which will check server status every 30 seconds.
+            this.timer = setInterval(() => {
+                console.log("ticker");
+
+                if (this.status === "offline" || this.status === "online") {
+                    // do nothing
+                } else {
+                    document
+                        .getElementById(this.id)
+                        .classList.remove("border-red-500");
+                    document
+                        .getElementById(this.id)
+                        .classList.add("border-yellow-500");
+                }
+
+                // Get the server
+                axios.get(route("get-server", this.id)).then((response) => {
+                    // Check status and update accordingly
+                    switch (response.data.status) {
+                        case "provisioning":
+                            document.getElementById("porbar").style.width =
+                                "20%";
+                            this.status = "provisioning";
+                            break;
+                        case "booting":
+                            document.getElementById("porbar").style.width =
+                                "40%";
+                            this.status = "booting";
+                            break;
+                        case "installing":
+                            document.getElementById("porbar").style.width =
+                                "60%";
+                            this.status = "installing";
+                            break;
+                        case "startup":
+                            document.getElementById("porbar").style.width =
+                                "80%";
+                            this.status = "startup";
+                            break;
+                        case "online":
+                            this.ip = response.data.ip_address;
                             document
                                 .getElementById(this.id)
                                 .classList.remove("border-yellow-500");
@@ -92,63 +139,65 @@ export default {
                                 .getElementById(this.id)
                                 .classList.add("border-green-500");
                             this.status = "online";
-                            this.ip = res.data.ip_address;
-                            clearInterval(this.timer2);
-                        }
-
-                        var widtha = res.data.ticker + "%";
-
-                        document.getElementById("progressbar").style.width =
-                            widtha;
-                    });
-                }, 1000);
-                return;
-            }
+                            clearInterval(this.timer);
+                            break;
+                    }
+                });
+            }, 1000);
         });
     },
 
     methods: {
         startServer(id) {
-            this.status = "startup";
-            this.startingserver = true;
+            // Make URL call to provision the server
+            axios.get(route("provision-server", id));
+
+            // Update the status, border color & progress bar
+            this.status = "provisioning";
             document.getElementById(id).classList.remove("border-red-500");
             document.getElementById(id).classList.add("border-yellow-500");
 
-            axios.get(route("startserver", this.id)).then((res) => {
-                if (res.data.status === "online") {
-                    document
-                        .getElementById(id)
-                        .classList.remove("border-yellow-500");
-                    document
-                        .getElementById(id)
-                        .classList.add("border-green-500");
-
-                    this.status = "online";
-                    this.ip = res.data.ip;
-                    clearInterval(this.timer);
-                }
-            });
-
+            // Setup timer which will check server status every 30 seconds.
             this.timer = setInterval(() => {
-                axios.get(route("serverprogress", this.id)).then((res) => {
-                    console.log("ticker");
-                    if (res.data.ticker === 100) {
-                        document
-                            .getElementById(id)
-                            .classList.remove("border-yellow-500");
-                        document
-                            .getElementById(id)
-                            .classList.add("border-green-500");
-                        this.status = "online";
-                        this.ip = res.data.ip_address;
-                        clearInterval(this.timer);
+                console.log("ticker");
+                // Get the server
+                axios.get(route("get-server", this.id)).then((response) => {
+                    // Check status and update accordingly
+                    switch (response.data.status) {
+                        case "provisioning":
+                            document.getElementById("porbar").style.width =
+                                "20%";
+                            this.status = "provisioning";
+                            break;
+                        case "booting":
+                            document.getElementById("porbar").style.width =
+                                "40%";
+                            this.status = "booting";
+                            break;
+                        case "installing":
+                            document.getElementById("porbar").style.width =
+                                "60%";
+                            this.status = "installing";
+                            break;
+                        case "startup":
+                            document.getElementById("porbar").style.width =
+                                "80%";
+                            this.status = "startup";
+                            break;
+                        case "online":
+                            this.ip = response.data.ip_address;
+                            document
+                                .getElementById(id)
+                                .classList.remove("border-yellow-500");
+                            document
+                                .getElementById(id)
+                                .classList.add("border-green-500");
+                            this.status = "online";
+                            clearInterval(this.timer);
+                            break;
                     }
-
-                    var widtha = res.data.ticker + "%";
-
-                    document.getElementById("progressbar").style.width = widtha;
                 });
-            }, 1000);
+            }, 30000);
         },
     },
 };
