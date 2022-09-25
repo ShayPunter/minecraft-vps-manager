@@ -1,35 +1,35 @@
 <script setup>
-import { ref } from 'vue';
-import { useForm } from '@inertiajs/inertia-vue3';
-import JetActionMessage from '@/Jetstream/ActionMessage.vue';
-import JetButton from '@/Jetstream/Button.vue';
-import JetFormSection from '@/Jetstream/FormSection.vue';
-import JetInput from '@/Jetstream/Input.vue';
-import JetInputError from '@/Jetstream/InputError.vue';
-import JetLabel from '@/Jetstream/Label.vue';
+import { ref } from "vue";
+import { useForm } from "@inertiajs/inertia-vue3";
+import JetActionMessage from "@/Jetstream/ActionMessage.vue";
+import JetButton from "@/Jetstream/Button.vue";
+import JetFormSection from "@/Jetstream/FormSection.vue";
+import JetInput from "@/Jetstream/Input.vue";
+import JetInputError from "@/Jetstream/InputError.vue";
+import JetLabel from "@/Jetstream/Label.vue";
 
 const passwordInput = ref(null);
 const currentPasswordInput = ref(null);
 
 const form = useForm({
-    current_password: '',
-    password: '',
-    password_confirmation: '',
+    current_password: "",
+    password: "",
+    password_confirmation: "",
 });
 
 const updatePassword = () => {
-    form.put(route('user-password.update'), {
-        errorBag: 'updatePassword',
+    form.put(route("user-password.update"), {
+        errorBag: "updatePassword",
         preserveScroll: true,
         onSuccess: () => form.reset(),
         onError: () => {
             if (form.errors.password) {
-                form.reset('password', 'password_confirmation');
+                form.reset("password", "password_confirmation");
                 passwordInput.value.focus();
             }
 
             if (form.errors.current_password) {
-                form.reset('current_password');
+                form.reset("current_password");
                 currentPasswordInput.value.focus();
             }
         },
@@ -40,11 +40,14 @@ const updatePassword = () => {
 <template>
     <JetFormSection @submitted="updatePassword">
         <template #title>
-            Update Password
+            <p class="text-gray-100">Update Password</p>
         </template>
 
         <template #description>
-            Ensure your account is using a long, random password to stay secure.
+            <p class="text-gray-200">
+                Ensure your account is using a long, random password to stay
+                secure.
+            </p>
         </template>
 
         <template #form>
@@ -58,7 +61,10 @@ const updatePassword = () => {
                     class="mt-1 block w-full"
                     autocomplete="current-password"
                 />
-                <JetInputError :message="form.errors.current_password" class="mt-2" />
+                <JetInputError
+                    :message="form.errors.current_password"
+                    class="mt-2"
+                />
             </div>
 
             <div class="col-span-6 sm:col-span-4">
@@ -75,7 +81,10 @@ const updatePassword = () => {
             </div>
 
             <div class="col-span-6 sm:col-span-4">
-                <JetLabel for="password_confirmation" value="Confirm Password" />
+                <JetLabel
+                    for="password_confirmation"
+                    value="Confirm Password"
+                />
                 <JetInput
                     id="password_confirmation"
                     v-model="form.password_confirmation"
@@ -83,7 +92,10 @@ const updatePassword = () => {
                     class="mt-1 block w-full"
                     autocomplete="new-password"
                 />
-                <JetInputError :message="form.errors.password_confirmation" class="mt-2" />
+                <JetInputError
+                    :message="form.errors.password_confirmation"
+                    class="mt-2"
+                />
             </div>
         </template>
 
@@ -92,7 +104,10 @@ const updatePassword = () => {
                 Saved.
             </JetActionMessage>
 
-            <JetButton :class="{ 'opacity-25': form.processing }" :disabled="form.processing">
+            <JetButton
+                :class="{ 'opacity-25': form.processing }"
+                :disabled="form.processing"
+            >
                 Save
             </JetButton>
         </template>
