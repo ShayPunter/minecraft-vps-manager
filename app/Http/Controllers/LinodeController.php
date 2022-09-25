@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\LinodeRegion;
 use App\Enums\LinodeType;
 use App\Jobs\StartServer;
 use App\Models\Server;
@@ -37,7 +38,7 @@ class LinodeController extends Controller
         $response = $client->request('POST', 'https://api.linode.com/v4/linode/instances', [
             'json' => ['backups_enabled' => false,
                 'image' => 'linode/ubuntu22.04',
-                'region' => 'eu-central',
+                'region' => LinodeRegion::EU_CENTRAL,
                 'root_pass' => env('LINODE_PASS'),
                 'type' => LinodeType::DEDICATED_LINODE_8GB,
                 'stackscript_id' => 1024018,
