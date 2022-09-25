@@ -29,6 +29,7 @@ Route::get('/', function () {
     ]);
 });
 
+// Server management routes
 Route::prefix('/server')->group(function() {
     Route::get('/{servername}', [\App\Http\Controllers\LinodeController::class, 'get_server'])->name('get-server');
     Route::get('/provision/{servername}', [\App\Http\Controllers\LinodeController::class, 'create_server'])->name('provision-server');
