@@ -2,11 +2,6 @@
 
 namespace App\Enums;
 
-/**
- * @method static static OptionOne()
- * @method static static OptionTwo()
- * @method static static OptionThree()
- */
 enum LinodeType: string
 {
     case SHARED_NANODE_1GB = "g6-nanode-1";
