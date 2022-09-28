@@ -71,8 +71,8 @@ Route::middleware('isadminapi')->post('/users/create', function(Request $request
     return response()->json('success');
 })->name('api-create-user');
 
-Route::middleware('isadminapi')->delete('/users/{id}', function($id) {
-    User::where('id', '=', $id)->get()->first()->destroy();
+Route::middleware('isadminapi')->post('/users/{id}', function($id) {
+    User::where('id', '=', $id)->get()->first()->delete();
 
     return response()->json('success');
 })->name('api-delete-user');

@@ -23,12 +23,12 @@ class AdminAPI
             $user = User::where('api_token', '=', $request->api_token)->get()->first();
 
             if ($user == null || $user->role != 'admin') {
-                return response()->json(['error' => 'Not Authorized'], 403);
+                return response()->json(['error' => 'Not Authorized', 'a' => $request->api_token], 403);
             }
 
             return $next($request);
         }
 
-        return response()->json(['error' => 'Not Authorized'], 403);
+        return response()->json(['error' => 'Not Authorized', 'a' => $request->api_token], 403);
     }
 }

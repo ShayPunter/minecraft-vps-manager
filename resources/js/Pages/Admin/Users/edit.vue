@@ -24,6 +24,7 @@ export default {
             role: "default",
             api_token: null,
             success: false,
+            successremove: false,
         };
     },
 
@@ -65,6 +66,18 @@ export default {
                 .then((res) => {
                     if (res.data === "success") {
                         this.success = true;
+                    }
+                });
+        },
+
+        deleteuser() {
+            axios
+                .post(route("api-delete-user", this.id), {
+                    api_token: this.api_token,
+                })
+                .then((res) => {
+                    if (res.data === "success") {
+                        window.location.href = "../";
                     }
                 });
         },
@@ -194,6 +207,13 @@ export default {
                             @click="updateuser()"
                         >
                             Update User
+                        </button>
+                        <button
+                            type="button"
+                            class="inline-flex ml-64 items-center rounded-md border border-transparent bg-red-700 px-4 py-2 text-sm font-medium text-gray-200 shadow-sm hover:bg-red-600 focus:outline-none focus:ring-none"
+                            @click="deleteuser()"
+                        >
+                            Delete User
                         </button>
                     </div>
                 </form>
