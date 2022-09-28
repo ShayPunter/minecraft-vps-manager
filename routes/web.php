@@ -56,6 +56,18 @@ Route::middleware([
     Route::get('/admin/dashboard', function () {
         return Inertia::render('Admin/Dashboard');
     })->name('admin-dashboard');
+    Route::get('/admin/user', function () {
+        return Inertia::render('Admin/Users/index');
+    })->name('users');
+    Route::get('/admin/user/edit/{id}', function ($id) {
+        return Inertia::render('Admin/Users/edit', [
+            'canLogin' => Route::has('login'),
+            'canRegister' => Route::has('register'),
+            'laravelVersion' => Application::VERSION,
+            'phpVersion' => PHP_VERSION,
+            'editingUser' => $id,
+        ]);
+    })->name('edit-user');
 });
 
 // For local development testing

@@ -8,7 +8,7 @@
       ```
     -->
     <div>
-        <Head :title="title" />
+        <!-- <Head :title="title" /> -->
         <TransitionRoot as="template" :show="sidebarOpen">
             <Dialog
                 as="div"
@@ -281,13 +281,8 @@ import {
 } from "@headlessui/vue";
 import {
     Bars3BottomLeftIcon,
-    BellIcon,
-    CalendarIcon,
-    ChartBarIcon,
-    FolderIcon,
     HomeIcon,
-    InboxIcon,
-    UsersIcon,
+    UserCircleIcon,
     XMarkIcon,
 } from "@heroicons/vue/24/outline";
 import { MagnifyingGlassIcon } from "@heroicons/vue/20/solid";
@@ -305,6 +300,20 @@ const navigation = [
         icon: HomeIcon,
         current: route().current("dashboard"),
         role: "default",
+    },
+    {
+        name: "Admin Dashboard",
+        href: route("admin-dashboard"),
+        icon: HomeIcon,
+        current: route().current("admin-dashboard"),
+        role: "admin",
+    },
+    {
+        name: "Users",
+        href: route("users"),
+        icon: UserCircleIcon,
+        current: route().current("users"),
+        role: "admin",
     },
 ];
 const userNavigation = [
@@ -331,6 +340,9 @@ export default {
 
     computed: {
         filteredNavigation: function () {
+            console.log(this.role);
+            if (this.role === "admin") return this.navigation;
+
             return this.navigation.filter((i) => i.role === this.role);
         },
     },

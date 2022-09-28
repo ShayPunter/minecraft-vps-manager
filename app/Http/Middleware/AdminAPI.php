@@ -8,7 +8,7 @@ use App\Enums\Roles;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 
-class UserIsAdmin
+class AdminAPI
 {
     /**
      * Handle an incoming request.
@@ -19,9 +19,16 @@ class UserIsAdmin
      */
     public function handle(Request $request, Closure $next)
     {
-        if (Auth::user()->role == 'admin')
-            return $next($request);
+        if ($request->api_token != null) {
+            $user = User::where('api_token', '=', $request->api_token)->get()->first();
 
-            return redirect('dashboard');
+            if ($user == null || $user->role != 'admin') {
+                return response()->json(['error' => 'Not Authorized'], 403);
+            }
+
+            return $next($request);
+        }
+
+        return response()->json(['error' => 'Not Authorized'], 403);
     }
 }
