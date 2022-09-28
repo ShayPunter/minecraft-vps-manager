@@ -53,15 +53,11 @@ class StartServer implements ShouldQueue
 
         sleep(2);
 
-        // // Check if correct java version is installed (to verify)
-        // $ssh->exec('java --version', function($callback) {
-        //     //echo $callback;
-        // });
-
-        // // Check if volume has been mounted (to verify)
-        // $ssh->exec('cd ../mnt/Minecraft/', function($callback) {
-        //     //echo $callback;
-        // });
+        // Check if volume has been mounted (to verify)
+        $ssh->exec('cd ../mnt/Minecraft/', function($callback) {
+                if ($callback == 'bash: cd: ../mnt/Minecraft/atm8: No such file or directory')
+                    sleep(30); // todo: update status & reschedule job to run in 1 minute.
+        });
 
         $server = Server::where('server_id', '=', $this->servername)->get()->first();
         $server->status = 'startup';
