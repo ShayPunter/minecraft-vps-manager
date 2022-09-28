@@ -32,7 +32,15 @@ import AppLayout from "@/Layouts/AppLayout.vue";
 <template>
     <AppLayout title="Dashboard">
         <template #header>
-            <h1 class="text-2xl font-semibold text-gray-100">Users</h1>
+            <h1 class="text-2xl font-semibold text-gray-100 inline-flex">
+                Users
+            </h1>
+            <a
+                :href="route('create-user')"
+                class="ml-12 inline-flex items-center rounded-md border border-transparent bg-gray-700 px-4 py-2 text-sm font-medium text-gray-200 shadow-sm hover:bg-gray-600 focus:outline-none focus:ring-none"
+            >
+                Create User
+            </a>
         </template>
 
         <div class="py-12">

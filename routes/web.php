@@ -61,7 +61,7 @@ Route::middleware([
     })->name('users');
     Route::get('/admin/user/create', function () {
         return Inertia::render('Admin/Users/new');
-    })->name('user-create');
+    })->name('create-user');
     Route::get('/admin/user/edit/{id}', function ($id) {
         return Inertia::render('Admin/Users/edit', [
             'canLogin' => Route::has('login'),
