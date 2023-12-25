@@ -28,7 +28,7 @@ class ServerProvisionStatus extends Command
      *
      * @return int
      */
-    public function handle()
+    public function handle(): int
     {
         $servers = Server::all();
         if (empty($servers)) {

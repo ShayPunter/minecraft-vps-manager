@@ -34,7 +34,7 @@ class StartServer implements ShouldQueue
      *
      * @return void
      */
-    public function handle()
+    public function handle(): void
     {
         // Bind to IP and connect to the server
         $opts = [
