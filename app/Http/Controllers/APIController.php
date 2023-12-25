@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
 use App\Models\Server;
+use Illuminate\Http\JsonResponse;
 
 class APIController extends Controller
 {

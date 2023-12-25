@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
 use App\Enums\LinodeRegion;
 use App\Enums\LinodeType;
 use App\Models\Server;
+use Illuminate\Http\JsonResponse;
 use Symfony\Component\HttpClient\HttpClient;
 
 class LinodeController extends Controller
