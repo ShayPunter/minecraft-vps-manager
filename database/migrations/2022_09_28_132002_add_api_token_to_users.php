@@ -9,27 +9,23 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
             Schema::table('users', function ($table) {
                 $table->string('api_token', 80)->after('password')
-                                    ->unique()
-                                    ->nullable()
-                                    ->default(Str::random(60));
+                    ->unique()
+                    ->nullable()
+                    ->default(Str::random(60));
             });
         });
     }
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
             $table->dropColumn('api_token');

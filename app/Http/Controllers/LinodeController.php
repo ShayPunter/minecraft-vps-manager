@@ -4,27 +4,28 @@ namespace App\Http\Controllers;
 
 use App\Enums\LinodeRegion;
 use App\Enums\LinodeType;
-use App\Jobs\StartServer;
 use App\Models\Server;
+use Illuminate\Http\JsonResponse;
 use Symfony\Component\HttpClient\HttpClient;
 
 class LinodeController extends Controller
 {
-
     /**
      * Create a new server in Linode with a StackScript
      *
      * @return void
+     *
      * @throws \Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface
      * @throws \Symfony\Contracts\HttpClient\Exception\DecodingExceptionInterface
      * @throws \Symfony\Contracts\HttpClient\Exception\RedirectionExceptionInterface
      * @throws \Symfony\Contracts\HttpClient\Exception\ServerExceptionInterface
      * @throws \Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface
      */
-    public function create_server($servername) {
+    public function create_server($servername)
+    {
         // Check for duplicates
         $server_exists = Server::where('server_id', '=', $servername)->get()->first();
-        if (!empty($server_exists)) {
+        if (! empty($server_exists)) {
             return 'server already exists';
         }
 
@@ -42,7 +43,7 @@ class LinodeController extends Controller
                 'root_pass' => env('LINODE_PASS'),
                 'type' => LinodeType::DEDICATED_LINODE_8GB,
                 'stackscript_id' => 1024018,
-                'label' => 'mc-' . $servername . '-' . $this->generateRandomString()]
+                'label' => 'mc-'.$servername.'-'.$this->generateRandomString()],
         ]);
 
         // Convert request to array
@@ -50,7 +51,7 @@ class LinodeController extends Controller
 
         // Send request to assign Volume to the new Linode
         $client->request('POST', 'https://api.linode.com/v4/volumes/410636/attach', [
-            'json' => ['linode_id' => $data['id'] ]
+            'json' => ['linode_id' => $data['id']],
         ]);
 
         // Store the server in the database
@@ -66,7 +67,8 @@ class LinodeController extends Controller
     /**
      * Gets the server from the database and returns to the frontend
      */
-    public function get_server($servername) {
+    public function get_server($servername): JsonResponse
+    {
         $server = Server::where('server_id', '=', $servername)->get()->first();
 
         if ($server == null) {
@@ -77,13 +79,15 @@ class LinodeController extends Controller
     }
 
     // Generates a random string
-    private function generateRandomString($length = 8) {
+    private function generateRandomString($length = 8)
+    {
         $characters = '0123456789abcdefghijklmnopqrstuvwxyz';
         $charactersLength = strlen($characters);
         $randomString = '';
         for ($i = 0; $i < $length; $i++) {
             $randomString .= $characters[rand(0, $charactersLength - 1)];
         }
+
         return $randomString;
     }
 }
