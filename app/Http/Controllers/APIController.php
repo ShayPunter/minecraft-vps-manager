@@ -9,8 +9,6 @@ class APIController extends Controller
 {
     /**
      * Get all servers from the database and return as JSON
-     *
-     * @return \Illuminate\Http\JsonResponse
      */
     public function get_servers(): JsonResponse
     {
