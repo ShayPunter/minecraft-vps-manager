@@ -3,30 +3,30 @@
 namespace App\Http\Controllers;
 
 use App\Models\Server;
-use xPaw\MinecraftPing;
-use xPaw\MinecraftPingException;
 use phpseclib3\Net\SSH2;
 use Symfony\Component\HttpClient\HttpClient;
+use xPaw\MinecraftPing;
+use xPaw\MinecraftPingException;
 
 class ServerMonitorController extends Controller
 {
     /**
      * Check to see if the server is online or not & update database accordingly
      *
-     * @param $server_ip
      * @return void
      */
-    public function check_minecraft_status($server_ip) {
+    public function check_minecraft_status($server_ip)
+    {
         $server = Server::where('server_ip', '=', $server_ip)->get()->first();
 
         try {
             $query = new MinecraftPing($server_ip, 25565);
             $query->Query();
 
-            $server->status = "online";
+            $server->status = 'online';
             $server->save();
         } catch (MinecraftPingException $e) {
-            $server->status = "starting_up";
+            $server->status = 'starting_up';
             $server->save();
         }
 
@@ -37,7 +37,8 @@ class ServerMonitorController extends Controller
      *
      * @return void
      */
-    public function check_if_servers_active() {
+    public function check_if_servers_active()
+    {
         $servers = Server::all();
 
         foreach ($servers as $server) {
@@ -54,21 +55,22 @@ class ServerMonitorController extends Controller
                 }
 
                 if ($server->last_activity >= 15) {
-                    $server->status = "shuttingdown";
+                    $server->status = 'shuttingdown';
                     $server->save();
 
-                    $opts = array(
-                        'socket' => array(
+                    $opts = [
+                        'socket' => [
                             'bindto' => $server->ip_address,
-                        ),
-                    );
+                        ],
+                    ];
                     $context = stream_context_create($opts);
-                    $socket = stream_socket_client('tcp://'. $server->ip_address . ':22', $errno, $errstr, ini_get('default_socket_timeout'), STREAM_CLIENT_CONNECT, $context);
+                    $socket = stream_socket_client('tcp://'.$server->ip_address.':22', $errno, $errstr, ini_get('default_socket_timeout'), STREAM_CLIENT_CONNECT, $context);
 
                     $ssh = new SSH2($socket);
 
-                    if (!$ssh->login('root', env('LINODE_PASS')))
+                    if (! $ssh->login('root', env('LINODE_PASS'))) {
                         throw new \Exception('Login failed');
+                    }
 
                     sleep(2);
                     $ssh->exec('screen -S server -X stuff \'stop\n\'');
@@ -80,7 +82,7 @@ class ServerMonitorController extends Controller
                     ]);
 
                     // Send request to setup a Linode 8GB Dedicated
-                    $response = $client->request('DELETE', 'https://api.linode.com/v4/linode/instances/' . $server->id);
+                    $response = $client->request('DELETE', 'https://api.linode.com/v4/linode/instances/'.$server->id);
 
                     $server->delete();
                 }

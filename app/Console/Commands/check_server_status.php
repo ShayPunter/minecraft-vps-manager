@@ -2,13 +2,12 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
 use App\Models\Server;
-use App\Models\ServerProgress;
-use xPaw\MinecraftPing;
-use xPaw\MinecraftPingException;
+use Illuminate\Console\Command;
 use phpseclib3\Net\SSH2;
 use Symfony\Component\HttpClient\HttpClient;
+use xPaw\MinecraftPing;
+use xPaw\MinecraftPingException;
 
 class check_server_status extends Command
 {
@@ -60,21 +59,22 @@ class check_server_status extends Command
                 }
 
                 if ($server->last_activity >= 15) {
-                    $server->status = "shuttingdown";
+                    $server->status = 'shuttingdown';
                     $server->save();
 
-                    $opts = array(
-                        'socket' => array(
+                    $opts = [
+                        'socket' => [
                             'bindto' => $server->ip_address,
-                        ),
-                    );
+                        ],
+                    ];
                     $context = stream_context_create($opts);
-                    $socket = stream_socket_client('tcp://'. $server->ip_address . ':22', $errno, $errstr, ini_get('default_socket_timeout'), STREAM_CLIENT_CONNECT, $context);
+                    $socket = stream_socket_client('tcp://'.$server->ip_address.':22', $errno, $errstr, ini_get('default_socket_timeout'), STREAM_CLIENT_CONNECT, $context);
 
                     $ssh = new SSH2($socket);
 
-                    if (!$ssh->login('root', env('LINODE_PASS')))
+                    if (! $ssh->login('root', env('LINODE_PASS'))) {
                         throw new \Exception('Login failed');
+                    }
 
                     sleep(2);
                     $ssh->exec('screen -S server -X stuff \'stop\n\'');
@@ -86,7 +86,7 @@ class check_server_status extends Command
                     ]);
 
                     // Send request to setup a Linode 8GB Dedicated
-                    $response = $client->request('DELETE', 'https://api.linode.com/v4/linode/instances/' . $server->id);
+                    $response = $client->request('DELETE', 'https://api.linode.com/v4/linode/instances/'.$server->id);
 
                     Server::destroy($server->id);
                 }

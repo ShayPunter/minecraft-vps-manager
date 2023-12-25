@@ -37,8 +37,9 @@ class ServerProvisionStatus extends Command
 
         foreach ($servers as $server) {
             // If linode is online, installing or starting up, continue to next in for loop.
-            if ($server->status == 'online' || $server->status == 'installing' || $server->status == 'startup')
+            if ($server->status == 'online' || $server->status == 'installing' || $server->status == 'startup') {
                 continue;
+            }
 
             // Http client
             $client = HttpClient::createForBaseUri('https://api.linode.com/', [
@@ -46,7 +47,7 @@ class ServerProvisionStatus extends Command
             ]);
 
             // Send request to get linode and its status
-            $response = $client->request('GET', 'https://api.linode.com/v4/linode/instances/' . $server->id);
+            $response = $client->request('GET', 'https://api.linode.com/v4/linode/instances/'.$server->id);
             $data = json_decode($response->getContent());
 
             // Update server status

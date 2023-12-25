@@ -2,16 +2,13 @@
 
 namespace App\Jobs;
 
+use App\Models\Server;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use App\Models\Server;
-use App\Models\ServerProgress;
 use phpseclib3\Net\SSH2;
-use Symfony\Component\HttpClient\HttpClient;
 
 class StartServer implements ShouldQueue
 {
@@ -22,8 +19,10 @@ class StartServer implements ShouldQueue
      *
      * @return void
      */
-    private $servername = "";
-    private $ip = "";
+    private $servername = '';
+
+    private $ip = '';
+
     public function __construct($ip, $servername)
     {
         $this->servername = $servername;
@@ -38,25 +37,27 @@ class StartServer implements ShouldQueue
     public function handle()
     {
         // Bind to IP and connect to the server
-        $opts = array(
-            'socket' => array(
+        $opts = [
+            'socket' => [
                 'bindto' => $this->ip,
-            ),
-        );
+            ],
+        ];
         $context = stream_context_create($opts);
-        $socket = stream_socket_client('tcp://' . $this->ip . ':22', $errno, $errstr, ini_get('default_socket_timeout'), STREAM_CLIENT_CONNECT, $context);
+        $socket = stream_socket_client('tcp://'.$this->ip.':22', $errno, $errstr, ini_get('default_socket_timeout'), STREAM_CLIENT_CONNECT, $context);
 
         $ssh = new SSH2($socket);
 
-        if (!$ssh->login('root', env('LINODE_PASS')))
+        if (! $ssh->login('root', env('LINODE_PASS'))) {
             throw new \Exception('Login failed');
+        }
 
         sleep(2);
 
         // Check if volume has been mounted (to verify)
-        $ssh->exec('cd ../mnt/Minecraft/', function($callback) {
-                if ($callback == 'bash: cd: ../mnt/Minecraft/atm8: No such file or directory')
-                    sleep(30); // todo: update status & reschedule job to run in 1 minute.
+        $ssh->exec('cd ../mnt/Minecraft/', function ($callback) {
+            if ($callback == 'bash: cd: ../mnt/Minecraft/atm8: No such file or directory') {
+                sleep(30);
+            } // todo: update status & reschedule job to run in 1 minute.
         });
 
         $server = Server::where('server_id', '=', $this->servername)->get()->first();
@@ -64,9 +65,9 @@ class StartServer implements ShouldQueue
         $server->save();
 
         // Run commands and start up the server
-        $ssh->exec('screen -dmS ' . $this->servername);
-        $ssh->exec('screen -S '. $this->servername .' -X stuff \'cd ../mnt/Minecraft/' . $this->servername . '\n\'');
+        $ssh->exec('screen -dmS '.$this->servername);
+        $ssh->exec('screen -S '.$this->servername.' -X stuff \'cd ../mnt/Minecraft/'.$this->servername.'\n\'');
         sleep(1);
-        $ssh->exec('screen -S '. $this->servername .' -X stuff \'./run.sh\n\'');
+        $ssh->exec('screen -S '.$this->servername.' -X stuff \'./run.sh\n\'');
     }
 }

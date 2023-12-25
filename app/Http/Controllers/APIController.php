@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Server;
-use Illuminate\Http\Request;
 
 class APIController extends Controller
 {
@@ -12,11 +11,13 @@ class APIController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function get_servers() {
+    public function get_servers()
+    {
         return response()->json(Server::all());
     }
 
-    public function get_server_id($servername) {
+    public function get_server_id($servername)
+    {
         return response()->json(Server::where('server_id', '=', $servername)->get()->first());
     }
 }
