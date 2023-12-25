@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use App\Enums\LinodeRegion;
 use App\Enums\LinodeType;
 use App\Models\Server;
@@ -66,7 +67,7 @@ class LinodeController extends Controller
     /**
      * Gets the server from the database and returns to the frontend
      */
-    public function get_server($servername)
+    public function get_server($servername): JsonResponse
     {
         $server = Server::where('server_id', '=', $servername)->get()->first();
 
