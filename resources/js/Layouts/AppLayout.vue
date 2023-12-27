@@ -315,6 +315,13 @@ const navigation = [
         current: route().current("users"),
         role: "admin",
     },
+    {
+        name: "Create Server",
+        href: route("create-server"),
+        icon: UserCircleIcon,
+        current: route().current("create-server"),
+        role: "admin",
+    },
 ];
 const userNavigation = [
     { name: "Settings", href: route("profile.show") },

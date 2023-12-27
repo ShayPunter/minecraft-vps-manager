@@ -18,11 +18,14 @@ use Inertia\Inertia;
 */
 
 Route::get('/', function () {
+    $servers = Server::where('is_public', '=', "on")->get();
+
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
         'canRegister' => Route::has('register'),
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
+        'servers' => $servers
     ]);
 });
 
@@ -42,7 +45,8 @@ Route::middleware([
     'verified',
 ])->group(function () {
     Route::get('/dashboard', function () {
-        return Inertia::render('Dashboard');
+        $servers = Server::all();
+        return Inertia::render('Dashboard', ['servers' => $servers]);
     })->name('dashboard');
 });
 
@@ -70,16 +74,16 @@ Route::middleware([
             'editingUser' => $id,
         ]);
     })->name('edit-user');
+
+    Route::get('/admin/server/create', [\App\Http\Controllers\ServerController::class, 'create'])->name('create-server');
+    Route::get('/admin/server/edit/{id}', [\App\Http\Controllers\ServerController::class, 'edit'])->name('edit-server');
+
+    Route::post('/servers/create', [\App\Http\Controllers\ServerController::class, 'store'])->name('api-server-create');
 });
 
 // For local development testing
 if (env('APP_ENV') == 'local') {
     Route::get('/test', function () {
-        return Inertia::render('Test', [
-            'canLogin' => Route::has('login'),
-            'canRegister' => Route::has('register'),
-            'laravelVersion' => Application::VERSION,
-            'phpVersion' => PHP_VERSION,
-        ]);
+        phpinfo();
     });
 }

@@ -1,6 +1,20 @@
 <script setup>
 import AppLayout from "@/Layouts/AppLayout.vue";
 import Server from "@/Components/Server.vue";
+
+const props = defineProps({
+    servers: Array
+});
+
+// Method to get the full server icon URL
+const getFullServerIconUrl = (server) => {
+    // Adjust the base URL as per your environment setup
+    const baseUrl = import.meta.env.APP_URL || ''; // For Vite
+    // const baseUrl = process.env.MIX_APP_URL || ''; // For Laravel Mix (Webpack)
+    return server.server_icon ? `${baseUrl}/${server.server_icon}` : '';
+};
+
+
 </script>
 
 <template>
@@ -15,12 +29,15 @@ import Server from "@/Components/Server.vue";
                     role="list"
                     class="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
                 >
+
                     <Server
-                        id="atm8"
-                        name="All The Mods 8"
-                        img="atm8.jpg"
-                        ip="0.0.0.0"
-                        status="offline"
+                        v-for="server in servers"
+                        :key="server.server_id"
+                        :id="server.server_id"
+                        :name="server.name"
+                        :img="server.server_icon"
+                        :ip="server.ip_address"
+                        :status="server.status"
                     ></Server>
                 </ul>
             </div>

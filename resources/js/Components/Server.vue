@@ -10,8 +10,14 @@
             />
             <h3 class="mt-6 text-gray-200 text-sm font-medium">{{ name }}</h3>
             <dl class="mt-1 flex-grow flex flex-col justify-between">
-                <dd v-if="ip !== '0.0.0.0'" class="text-gray-100 text-sm">
+                <dd v-if="ip != null" class="text-gray-100 text-sm">
                     IP: {{ ip }}
+                </dd>
+            </dl>
+
+            <dl class="mt-1 flex-grow flex flex-col justify-between">
+                <dd class="text-gray-100 text-sm">
+                    Status: {{ translateStatus(status) }}
                 </dd>
             </dl>
         </div>
@@ -75,25 +81,8 @@ export default {
                 this.status = response.data.status;
             }
 
-            // // If status is online, display IP and turn to green
-            // if (this.status === "online") {
-            //     document
-            //         .getElementById(this.id)
-            //         .classList.remove("border-red-500");
-            //     document
-            //         .getElementById(this.id)
-            //         .classList.add("border-green-500");
-            //     this.ip = response.data.ip_address;
-            // }
-
-            // // If status isn't offline or online, then provision check
-            // if (this.status === "offline" || this.status === "online") {
-            //     return;
-            // }
-
-            // Setup timer which will check server status every 30 seconds.
+            // Setup timer which will check server status every 1 seconds.
             this.timer = setInterval(() => {
-                console.log("ticker");
 
                 if (this.status === "offline" || this.status === "online") {
                     // do nothing
@@ -148,6 +137,22 @@ export default {
     },
 
     methods: {
+        translateStatus(status) {
+            switch (status) {
+                case "provisioning":
+                    return 'Provisioning Machine';
+                case "booting":
+                    return 'Booting Machine';
+                case "installing":
+                    return 'Installing Software on Machine';
+                case "startup":
+                    return 'Starting Minecraft Server';
+                case "online":
+                    return 'Online';
+                default: return status;
+            }
+        },
+
         startServer(id) {
             // Make URL call to provision the server
             axios.get(route("provision-server", id));

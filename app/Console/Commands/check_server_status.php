@@ -94,5 +94,6 @@ class check_server_status extends Command
                 $server->save();
             }
         }
+        return 0;
     }
 }

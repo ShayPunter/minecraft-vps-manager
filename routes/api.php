@@ -82,3 +82,5 @@ Route::middleware('isadminapi')->post('/users/{id}', function ($id) {
 
     return response()->json('success');
 })->name('api-delete-user');
+
+Route::get('linode-types', [\App\Http\Controllers\LinodeController::class, 'getLinodeTypes']);

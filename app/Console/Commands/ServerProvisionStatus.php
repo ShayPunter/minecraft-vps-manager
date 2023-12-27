@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Jobs\StartServer;
+use App\Models\Node;
 use App\Models\Server;
 use Illuminate\Console\Command;
 use Symfony\Component\HttpClient\HttpClient;
@@ -28,12 +29,16 @@ class ServerProvisionStatus extends Command
      */
     public function handle(): int
     {
-        $servers = Server::all();
-        if (empty($servers)) {
+        $nodes = Node::all();
+        if (empty($nodes)) {
             return 0;
         }
 
-        foreach ($servers as $server) {
+        foreach ($nodes as $node) {
+
+            // Get the associated server with the node
+            $server = Server::where('ip_address', '=', $node->ip_address)->get()->first();
+
             // If linode is online, installing or starting up, continue to next in for loop.
             if ($server->status == 'online' || $server->status == 'installing' || $server->status == 'startup') {
                 continue;
@@ -45,7 +50,7 @@ class ServerProvisionStatus extends Command
             ]);
 
             // Send request to get linode and its status
-            $response = $client->request('GET', 'https://api.linode.com/v4/linode/instances/'.$server->id);
+            $response = $client->request('GET', 'https://api.linode.com/v4/linode/instances/' . $node->node_id);
             $data = json_decode($response->getContent());
 
             // Update server status
@@ -60,5 +65,6 @@ class ServerProvisionStatus extends Command
                 StartServer::dispatch($server->ip_address, $server->server_id)->onQueue('server_start')->delay(now()->addMinutes(1));
             }
         }
+        return 0;
     }
 }

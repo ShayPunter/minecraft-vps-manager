@@ -1,5 +1,10 @@
 <script setup>
 import Server from "@/Components/Server.vue";
+
+const props = defineProps({
+    servers: Array
+});
+
 </script>
 
 <template>
@@ -9,11 +14,13 @@ import Server from "@/Components/Server.vue";
             class="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
         >
             <Server
-                id="atm8"
-                name="All The Mods 8"
-                img="atm8.jpg"
-                ip="0.0.0.0"
-                status="offline"
+                v-for="server in servers"
+                :key="server.server_id"
+                :id="server.server_id"
+                :name="server.name"
+                :img="server.server_icon"
+                :ip="server.ip_address"
+                :status="server.status"
             ></Server>
         </ul>
     </div>

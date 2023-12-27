@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Enums\LinodeRegion;
 use App\Enums\LinodeType;
+use App\Models\Node;
 use App\Models\Server;
 use Illuminate\Http\JsonResponse;
+use Symfony\Component\HttpClient\Exception\ClientException;
 use Symfony\Component\HttpClient\HttpClient;
 
 class LinodeController extends Controller
@@ -21,12 +23,16 @@ class LinodeController extends Controller
      * @throws \Symfony\Contracts\HttpClient\Exception\ServerExceptionInterface
      * @throws \Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface
      */
-    public function create_server($servername)
+    public function create_server($server_id)
     {
+        $server = Server::where('server_id', '=', $server_id)->get()->first();
+
+        // Check to see if there is a server node existing
+        $node = Node::where('ip_address', '=', $server->ip_address)->get()->first();
+
         // Check for duplicates
-        $server_exists = Server::where('server_id', '=', $servername)->get()->first();
-        if (! empty($server_exists)) {
-            return 'server already exists';
+        if (! empty($node)) {
+            return 'server already online.';
         }
 
         // Http client
@@ -36,28 +42,32 @@ class LinodeController extends Controller
 
         // Send request to setup a Linode 8GB Dedicated
         // Note: to make configurable in the future
-        $response = $client->request('POST', 'https://api.linode.com/v4/linode/instances', [
-            'json' => ['backups_enabled' => false,
-                'image' => 'linode/ubuntu22.04',
-                'region' => LinodeRegion::EU_CENTRAL,
-                'root_pass' => env('LINODE_PASS'),
-                'type' => LinodeType::DEDICATED_LINODE_8GB,
-                'stackscript_id' => 1024018,
-                'label' => 'mc-'.$servername.'-'.$this->generateRandomString()],
-        ]);
+
+        error_log($server->server_size);
+
+        try {
+            $response = $client->request('POST', 'https://api.linode.com/v4/linode/instances', [
+                'json' => ['backups_enabled' => false,
+                    'image' => 'linode/ubuntu22.04',
+                    'region' => LinodeRegion::EU_CENTRAL,
+                    'root_pass' => env('LINODE_PASS'),
+                    'type' => $server->server_size,
+                    'label' => $server_id],
+            ]);
+        } catch (ClientException $e) {
+            error_log($e);
+        }
 
         // Convert request to array
         $data = $response->toArray();
 
-        // Send request to assign Volume to the new Linode
-        $client->request('POST', 'https://api.linode.com/v4/volumes/410636/attach', [
-            'json' => ['linode_id' => $data['id']],
-        ]);
+        // Store the node in the database and update server with new IP
+        $new_node = new Node();
+        $new_node->node_id = $data['id'];
+        $new_node->ip_address = $data['ipv4'][0];
+        $new_node->provider = 'linode';
+        $new_node->save();
 
-        // Store the server in the database
-        $server = new Server();
-        $server->id = $data['id'];
-        $server->server_id = $servername;
         $server->status = 'provisioning';
         $server->ip_address = $data['ipv4'][0];
         $server->last_activity = 1;
@@ -89,5 +99,19 @@ class LinodeController extends Controller
         }
 
         return $randomString;
+    }
+
+    public function getLinodeTypes()
+    {
+        $types = [];
+        foreach (LinodeType::cases() as $case) {
+            $types[] = [
+                'id' => $case->value,
+                'name' => $case->name,
+                // You can also add additional info like CPU, RAM, etc. here
+            ];
+        }
+
+        return response()->json($types);
     }
 }
