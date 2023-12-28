@@ -125,7 +125,6 @@
                     <nav class="flex-1 space-y-1 px-2 pb-4">
                         <a
                             v-for="item in navigation"
-                            v-if="item.role === role"
                             :key="item.name"
                             :href="item.href"
                             :class="[
