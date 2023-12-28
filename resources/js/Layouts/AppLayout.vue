@@ -124,7 +124,8 @@
                 <div class="mt-5 flex flex-grow flex-col">
                     <nav class="flex-1 space-y-1 px-2 pb-4">
                         <a
-                            v-for="item in filteredNavigation"
+                            v-for="item in navigation"
+                            v-if="navigation.role === role"
                             :key="item.name"
                             :href="item.href"
                             :class="[
@@ -343,15 +344,6 @@ export default {
         axios.get(route("get-auth-user")).then((res) => {
             this.role = res.data.role;
         });
-    },
-
-    computed: {
-        filteredNavigation: function () {
-            console.log(this.role);
-            if (this.role === "admin") return this.navigation;
-
-            return this.navigation.filter((i) => i.role === this.role);
-        },
     },
 };
 </script>
