@@ -3,6 +3,7 @@ import { Form, Head, Link } from '@inertiajs/vue3';
 import ServerController from '@/actions/App/Http/Controllers/Admin/ServerController';
 import WorldArchiveController from '@/actions/App/Http/Controllers/Admin/WorldArchiveController';
 import InputError from '@/components/InputError.vue';
+import ServerConfigFields from '@/components/admin/ServerConfigFields.vue';
 import ServerFields from '@/components/admin/ServerFields.vue';
 import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,7 @@ import { index } from '@/routes/admin/servers';
 import { edit as worldStorage } from '@/routes/admin/world-storage';
 import type {
     ServerCatalog,
+    ServerConfig,
     ServerDefinition,
     SoftwareOptions,
 } from '@/types/servers';
@@ -20,6 +22,7 @@ const props = defineProps<{
     catalog: ServerCatalog;
     javaVersions: number[];
     software: SoftwareOptions;
+    config: ServerConfig;
     dnsDomain: string | null;
     world: {
         archives: {
@@ -97,6 +100,11 @@ defineOptions({
                 :dns-domain="dnsDomain"
                 :server="props.server"
                 :has-saved-world="world.archives.some((a) => a.current)"
+            />
+            <ServerConfigFields
+                :errors="errors"
+                :config="config"
+                :running="world.running"
             />
 
             <div class="flex items-center gap-4">

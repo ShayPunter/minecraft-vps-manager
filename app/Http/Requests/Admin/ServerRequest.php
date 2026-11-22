@@ -11,6 +11,7 @@ use App\Minecraft\VersionSource;
 use App\Minecraft\VersionSourceException;
 use App\Models\Server;
 use App\Servers\ServerCatalog;
+use App\Servers\ServerConfigForm;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -95,6 +96,8 @@ class ServerRequest extends FormRequest
                 'nullable', 'string', 'max:190', 'regex:'.Server::SUBDOMAIN_PATTERN,
                 Rule::unique(Server::class, 'subdomain')->ignore($server instanceof Server ? $server->id : null),
             ],
+            // server.properties, whitelist/ops, run.sh / user_jvm_args.txt (#5377).
+            ...ServerConfigForm::rules(),
         ];
     }
 
@@ -109,27 +112,32 @@ class ServerRequest extends FormRequest
             'subdomain.regex' => 'Use lowercase letters, digits and dashes, with dots between parts (e.g. atm9 or mc.atm9).',
             'subdomain.unique' => 'Another server already uses that name.',
             'minecraft_version.required' => 'Pick a Minecraft version.',
+            ...ServerConfigForm::messages(),
         ];
     }
 
     /** @var array{java_version: int, start_command: string}|null */
     private ?array $installSettings = null;
 
+    /** @var array<string, mixed>|null what ServerConfigForm worked out (#5377) */
+    private ?array $config = null;
+
     /**
      * The validated attributes to save: the start command and Java worked out for an
-     * installed server, and no Minecraft version for a custom one.
+     * installed server, no Minecraft version for a custom one, and only the config changes
+     * that differ from the saved world.
      *
      * @return array<string, mixed>
      */
     public function serverAttributes(): array
     {
-        $attributes = $this->safe()->except('eula');
+        $attributes = $this->safe()->except(['eula', ...array_keys(ServerConfigForm::rules())]);
 
         if (($attributes['software'] ?? null) === Software::Custom->value) {
             $attributes['minecraft_version'] = null;
         }
 
-        return [...$attributes, ...($this->installSettings ?? [])];
+        return [...$attributes, ...($this->installSettings ?? []), ...($this->config ?? [])];
     }
 
     /**
@@ -183,6 +191,10 @@ class ServerRequest extends FormRequest
             },
             function (Validator $validator): void {
                 $this->resolveInstall($validator);
+            },
+            function (Validator $validator): void {
+                $server = $this->route('server');
+                $this->config = ServerConfigForm::resolve($validator, $this->all(), $server instanceof Server ? $server : null);
             },
         ];
     }

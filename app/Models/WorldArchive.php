@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $source upload or save
  * @property int|null $server_run_id the run whose stop saved it
  * @property int|null $uploaded_by
+ * @property array<string, string>|null $files its server.properties, run.sh etc. as saved (#5377, ServerFiles); null before #5377
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read Server $server
@@ -54,6 +55,7 @@ class WorldArchive extends Model
         return [
             'size' => 'integer',
             'server_run_id' => 'integer',
+            'files' => 'array',
         ];
     }
 }

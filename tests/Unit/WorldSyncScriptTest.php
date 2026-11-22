@@ -229,7 +229,12 @@ class WorldSyncScriptTest extends TestCase
     {
         $sha = str_repeat('d', 64);
 
-        $this->assertSame(['size' => 42, 'sha256' => $sha], WorldSync::parseSaveOutput("sftp> put \"a\" \"b\"\nsize=42 sha256={$sha}\n"));
+        $this->assertSame(['size' => 42, 'sha256' => $sha, 'files' => []], WorldSync::parseSaveOutput("sftp> put \"a\" \"b\"\nsize=42 sha256={$sha}\n"));
+        // The world's own server.properties etc. as saved (#5377); other names are ignored.
+        $this->assertSame(
+            ['size' => 42, 'sha256' => $sha, 'files' => ['server.properties' => "motd=Hi\n"]],
+            WorldSync::parseSaveOutput('mvmfile server.properties '.base64_encode("motd=Hi\n")."\nmvmfile passwd ".base64_encode('root:x')."\nsize=42 sha256={$sha}\n"),
+        );
         $this->assertNull(WorldSync::parseSaveOutput("empty=1\n"));
 
         $this->expectException(InvalidArgumentException::class);

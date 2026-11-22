@@ -99,6 +99,14 @@ loader), each checked against the SHA-1 or SHA-256 its source publishes. The fir
 saves the whole folder like any world, so later starts download that and never reinstall.
 Changing the version afterwards doesn't touch a saved world.
 
+The server's settings also hold **server.properties** (MOTD, difficulty, game mode, max
+players, PvP, whitelist, view and simulation distance, spawn protection, flight, hardcore,
+plus any other `key=value`), the **whitelisted players** and **operators** (names are
+checked against Mojang), and a pack's **run.sh** and **user_jvm_args.txt**. They start from
+what the saved world has (read from an upload, or recorded on every stop). Only what you
+change is kept, and it's written over the world's files before every start, so a running
+server picks it up on its next start. "Use the pack's file" puts a file back to the pack's.
+
 With your own start command, set the Java version the server jar needs (Paper and vanilla
 26.x need Java 25). A `run.sh` at the top of the world zip is made executable, so `./run.sh`
 works as the start command.

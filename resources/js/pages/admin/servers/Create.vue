@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import { Form, Head, Link } from '@inertiajs/vue3';
 import ServerController from '@/actions/App/Http/Controllers/Admin/ServerController';
+import ServerConfigFields from '@/components/admin/ServerConfigFields.vue';
 import ServerFields from '@/components/admin/ServerFields.vue';
 import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
 import { create, index } from '@/routes/admin/servers';
-import type { ServerCatalog, SoftwareOptions } from '@/types/servers';
+import type {
+    ServerCatalog,
+    ServerConfig,
+    SoftwareOptions,
+} from '@/types/servers';
 
 defineProps<{
     catalog: ServerCatalog;
     javaVersions: number[];
     software: SoftwareOptions;
+    config: ServerConfig;
     dnsDomain: string | null;
 }>();
 
@@ -45,6 +51,7 @@ defineOptions({
                 :software="software"
                 :dns-domain="dnsDomain"
             />
+            <ServerConfigFields :errors="errors" :config="config" />
 
             <div class="flex items-center gap-4">
                 <Button :disabled="processing" data-test="save-server"

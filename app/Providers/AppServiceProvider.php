@@ -8,8 +8,11 @@ use App\Cloud\HetznerCloud;
 use App\Dns\CloudflareDns;
 use App\Dns\DnsProvider;
 use App\Dns\FakeDnsProvider;
+use App\Minecraft\FakePlayers;
 use App\Minecraft\FakeVersions;
+use App\Minecraft\MojangPlayers;
 use App\Minecraft\OnlineVersions;
+use App\Minecraft\PlayerLookup;
 use App\Minecraft\VersionSource;
 use App\Servers\FakeMinecraftProbe;
 use App\Servers\FakeRemoteShell;
@@ -83,6 +86,11 @@ class AppServiceProvider extends ServiceProvider
 
             return new OnlineVersions;
         });
+
+        // Tests and E2E never ask Mojang about player names (#5377).
+        $this->app->singleton(PlayerLookup::class, fn ($app): PlayerLookup => $app->environment('testing', 'e2e')
+            ? new FakePlayers
+            : new MojangPlayers);
 
         // Tests and E2E keep worlds in a local folder, whatever the settings say (#5288).
         $this->app->singleton(WorldStorage::class, fn ($app): WorldStorage => new WorldStorage(
