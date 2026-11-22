@@ -118,9 +118,9 @@ test('an admin adds a server, a player starts it and sees it come online', async
     await expect(
         card.getByRole('button', { name: 'Start Friends Modpack' }),
     ).toHaveCount(0);
-    // The watchdog's ping: nobody on yet, and when it will stop by itself.
+    // Nobody on yet, so it counts down to the watchdog's idle stop (#5378).
     await expect(card.locator('[data-test="server-players"]')).toHaveText(
-        /Nobody on\. It stops after 15 minutes with nobody on\.|Checking who's on…/,
+        /^(Checking who's on… )?Stops in 1[45] min if nobody joins\.$/,
     );
     // The player started it, so they may stop it.
     await expect(
@@ -161,7 +161,19 @@ test('a guest starts a public server from the home page', async ({
     await expect(
         card.getByRole('button', { name: 'Stop Open World' }),
     ).toHaveCount(0);
+    // The home page counts down to the idle stop too (#5378).
+    await expect(card.locator('[data-test="server-players"]')).toHaveText(
+        /Stops in 1[45] min if nobody joins\.$/,
+    );
     await guestContext.close();
+
+    // And Admin → Servers.
+    await page.goto('/admin/servers');
+    await expect(
+        page.locator(
+            '[data-test="server-row-open-world"] [data-test="server-idle"]',
+        ),
+    ).toHaveText(/Stops in 1[45] min if nobody joins\.$/);
 
     // Stop it again so later specs start under the cap.
     await stopServer(page, 'Open World', 'open-world');

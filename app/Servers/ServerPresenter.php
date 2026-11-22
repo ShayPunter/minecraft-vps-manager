@@ -65,11 +65,28 @@ class ServerPresenter
             'dns_error' => $viewer?->isAdmin() === true ? $run?->dns_error : null,
             'players_online' => $status === RunStatus::Online ? $run?->players_online : null,
             'idle_minutes' => $server->idle_minutes,
+            // When the watchdog stops it if nobody is on (#5378), and the seconds left from
+            // this answer, so the page counts down without trusting the viewer's clock.
+            // 0 = due: the watchdog's next minute stops it. Null unless online.
+            ...self::idleStop($status === RunStatus::Online ? $run : null, $server->idle_minutes),
             'error' => $error,
             'error_label' => $errorLabel,
             'can_start' => $run === null,
             'can_stop' => $run !== null && self::mayStop($run, $viewer),
             'can_force_delete' => $run?->status === RunStatus::StopFailed && $viewer?->isAdmin() === true,
+        ];
+    }
+
+    /**
+     * @return array{stops_at: string|null, stops_in_seconds: int|null}
+     */
+    private static function idleStop(?ServerRun $run, int $idleMinutes): array
+    {
+        $stopsAt = $run?->idleStopsAt($idleMinutes);
+
+        return [
+            'stops_at' => $stopsAt?->toIso8601String(),
+            'stops_in_seconds' => $stopsAt === null ? null : max(0, (int) now()->diffInSeconds($stopsAt, false)),
         ];
     }
 
