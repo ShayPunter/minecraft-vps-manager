@@ -68,4 +68,6 @@ export type ServerDefinition = {
     java_version: number;
     idle_minutes: number;
     subdomain: string | null;
+    eula_accepted_at?: string | null;
+    eula_accepted_by?: string | null;
 };

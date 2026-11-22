@@ -2,11 +2,13 @@
 
 use App\Http\Controllers\Admin\DnsController;
 use App\Http\Controllers\Admin\ServerController;
+use App\Http\Controllers\Admin\ServerLogController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\WorldArchiveController;
 use App\Http\Controllers\Admin\WorldStorageController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\RunLogIntakeController;
 use App\Http\Controllers\ServerStartController;
 use App\Http\Controllers\ServerStopController;
 use App\Http\Controllers\VersionController;
@@ -20,6 +22,13 @@ Route::get('/', HomeController::class)->name('home');
 Route::get('/version', VersionController::class)
     ->withoutMiddleware('web')
     ->name('version');
+
+// A run's VPS posts its log here (#5367), with the run's own token. No session, no cookies.
+Route::post('runs/{run}/log', RunLogIntakeController::class)
+    ->withoutMiddleware('web')
+    ->middleware('throttle:run-log')
+    ->where('run', '[0-9]+')
+    ->name('runs.log.store');
 
 // Guests may start public servers; the controller 404s private ones for them.
 Route::post('servers/{server}/start', ServerStartController::class)
@@ -40,6 +49,9 @@ Route::middleware(['auth', EnsureUserIsAdmin::class])
         Route::resource('users', UserController::class)->except(['show']);
         Route::resource('servers', ServerController::class)->except(['show']);
         Route::post('servers/{server}/stop', [ServerController::class, 'stop'])->name('servers.stop');
+        // Each run's log (#5367).
+        Route::get('servers/{server}/log', [ServerLogController::class, 'show'])->name('servers.log');
+        Route::get('servers/{server}/log/lines', [ServerLogController::class, 'lines'])->name('servers.log.lines');
 
         // World storage (#5288).
         Route::get('world-storage', [WorldStorageController::class, 'edit'])->name('world-storage.edit');

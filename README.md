@@ -85,6 +85,16 @@ one before the VPS is deleted. Servers can't start until world storage is set up
 
 ### How a start works
 
+Before the first start, tick **I accept the Minecraft EULA for this server** in the server's
+settings: Minecraft won't run without it, and the app then writes `eula.txt` for you. Set the
+Java version the server jar needs (Paper and vanilla 26.x need Java 25). A `run.sh` at the top
+of the world zip is made executable, so `./run.sh` works as the start command.
+
+**Admin → Servers → Log** shows what the VPS and Minecraft printed, live while it starts or
+runs, and still there after the VPS is deleted (14 days). If a server never comes online, the
+app pulls the last log lines before deleting the VPS and names the likely cause (EULA, Java
+version, memory, a missing jar…) in the error.
+
 The VPS boots and installs Java (cloud-init). The app then logs in over SSH, downloads the
 server's current world archive straight from world storage onto the VPS, checks its size and
 SHA-256, unpacks it into the server folder (a zip holding a single folder, like most modpack

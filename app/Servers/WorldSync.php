@@ -179,6 +179,13 @@ class WorldSync
             if systemctl is-active --quiet "$UNIT"; then echo "prepared (already running)"; exit 0; fi
             # The first boot installs Java and the unit; wait for it to finish.
             cloud-init status --wait >/dev/null 2>&1 || true
+            # The log shipper (#5367) goes first, so the setup output and everything after it
+            # reach the app's log even if the rest fails.
+            if [ -f /root/.mvm-log/mvm-log-ship.service ]; then
+                install -m 0644 /root/.mvm-log/mvm-log-ship.service /etc/systemd/system/mvm-log-ship.service
+                systemctl daemon-reload
+                systemctl restart mvm-log-ship.service || echo "The log shipper didn't start."
+            fi
             for tool in java unzip; do
                 if ! command -v "$tool" >/dev/null 2>&1; then
                     echo "$tool isn't installed: the VPS's first-boot setup (cloud-init) didn't finish."
@@ -190,6 +197,15 @@ class WorldSync
 
             SH
             .$fetch
+            .<<<'SH'
+            # A start command like ./run.sh: zips made on Windows lose the executable bit.
+            find "$DIR" -maxdepth 1 -type f -name '*.sh' -exec chmod 0755 {} +
+
+            SH
+            .($server->eula_accepted_at !== null
+                // An admin accepted the Minecraft EULA for this server (#5367): Minecraft won't start without it.
+                ? "printf '%s\\n' '#Accepted for this server in Minecraft VPS Manager (https://aka.ms/MinecraftEULA)' 'eula=true' > \"\$DIR/eula.txt\"\n"
+                : '')
             .<<<'SH'
             chown -R minecraft:minecraft /opt/minecraft
             systemctl start "$UNIT"

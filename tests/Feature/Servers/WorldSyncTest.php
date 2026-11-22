@@ -134,7 +134,8 @@ class WorldSyncTest extends TestCase
         $this->assertSame([$run->ssh_private_key], $this->shell()->keys(), 'Logged in with the run\'s own key.');
 
         $files = $this->filesByPath();
-        $this->assertSame(['/root/.mvm/prepare.sh', '/root/.mvm/known_hosts', '/root/.mvm/password', '/root/.mvm/askpass'], array_keys($files));
+        // Plus the log shipper's files (#5367).
+        $this->assertSame(['/root/.mvm/prepare.sh', '/root/.mvm/known_hosts', '/root/.mvm/password', '/root/.mvm/askpass', '/root/.mvm-log/ship.sh', '/root/.mvm-log/curl.conf', '/root/.mvm-log/mvm-log-ship.service'], array_keys($files));
         $this->assertSame(0700, $files['/root/.mvm/prepare.sh']['mode']);
         $this->assertSame(0600, $files['/root/.mvm/password']['mode']);
         $this->assertSame('hunter2-secret', $files['/root/.mvm/password']['contents']);
@@ -161,7 +162,7 @@ class WorldSyncTest extends TestCase
 
         $this->assertSame(RunStatus::Online, $run->status);
         $this->assertNull($run->world_archive_id);
-        $this->assertSame(['/root/.mvm/prepare.sh'], array_keys($this->filesByPath()));
+        $this->assertSame(['/root/.mvm/prepare.sh', '/root/.mvm-log/ship.sh', '/root/.mvm-log/curl.conf', '/root/.mvm-log/mvm-log-ship.service'], array_keys($this->filesByPath()));
         $this->assertStringNotContainsString('fetch "$P"', $this->filesByPath()['/root/.mvm/prepare.sh']['contents']);
     }
 

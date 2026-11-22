@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Form, Head, Link, usePoll } from '@inertiajs/vue3';
 import ServerController from '@/actions/App/Http/Controllers/Admin/ServerController';
+import ServerLogController from '@/actions/App/Http/Controllers/Admin/ServerLogController';
 import Heading from '@/components/Heading.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -107,6 +108,22 @@ usePoll(5000, { only: ['servers'] });
                         </td>
                         <td class="px-4 py-2">
                             <div class="flex justify-end gap-2">
+                                <Button
+                                    as-child
+                                    variant="ghost"
+                                    size="sm"
+                                    :data-test="`log-${server.slug}`"
+                                >
+                                    <Link
+                                        :href="
+                                            ServerLogController.show(
+                                                server.slug,
+                                            )
+                                        "
+                                        :aria-label="`Log of ${server.name}`"
+                                        >Log</Link
+                                    >
+                                </Button>
                                 <Form
                                     v-if="server.can_stop"
                                     v-bind="

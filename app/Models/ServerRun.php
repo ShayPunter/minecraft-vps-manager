@@ -7,6 +7,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * One VPS lifetime. Only App\Servers\ServerLauncher changes it, so nothing is mass assigned.
@@ -37,6 +38,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $dns_zone_id the zone that record is in
  * @property string|null $dns_name the name it pointed at the VPS
  * @property string|null $dns_error why the name couldn't be set (the IP still works)
+ * @property string|null $log_token_hash SHA-256 of the token this run's log shipper posts with (#5367)
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read Server $server
@@ -49,7 +51,15 @@ class ServerRun extends Model
      *
      * @var list<string>
      */
-    protected $hidden = ['ssh_private_key'];
+    protected $hidden = ['ssh_private_key', 'log_token_hash'];
+
+    /**
+     * @return HasMany<ServerRunLog, $this>
+     */
+    public function logs(): HasMany
+    {
+        return $this->hasMany(ServerRunLog::class);
+    }
 
     /**
      * @return BelongsTo<Server, $this>

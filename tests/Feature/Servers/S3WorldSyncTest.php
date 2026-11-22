@@ -125,7 +125,7 @@ class S3WorldSyncTest extends TestCase
         $this->assertSame($archive->id, $run->world_archive_id);
 
         $files = $this->filesByPath();
-        $this->assertSame(['/root/.mvm/prepare.sh', '/root/.mvm/get.conf'], array_keys($files));
+        $this->assertSame(['/root/.mvm/prepare.sh', '/root/.mvm/get.conf', '/root/.mvm-log/ship.sh', '/root/.mvm-log/curl.conf', '/root/.mvm-log/mvm-log-ship.service'], array_keys($files));
         $this->assertSame(0600, $files['/root/.mvm/get.conf']['mode']);
         $this->assertSame('url = "https://fake-s3.invalid/mvm-worlds/worlds/'.$path.'?mvm=get&X-Amz-Signature=fake"'."\n", $files['/root/.mvm/get.conf']['contents']);
         $this->assertStringContainsString('fetch() { cu --config "$M/get.conf" -o "$2"; }', $files['/root/.mvm/prepare.sh']['contents']);

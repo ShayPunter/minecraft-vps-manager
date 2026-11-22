@@ -233,6 +233,43 @@ output. Run with the real binary:
   checked size + hash on the mock. s3mock doesn't check signatures, so a wrong key and link
   expiry weren't tested for real; nor was a real provider.
   E2E: "Bucket" also matches the "Path-style URLs (bucket in the path)" label: use `exact: true`.
+- Run logs (#5367, `App\Servers\RunLog`, `server_run_logs`): every run keeps what its VPS
+  printed, after the VPS is gone. Sources: `prepare` (prepare.sh's output, added by the app
+  after each attempt), `setup` (cloud-init-output.log, sent once) and `minecraft` (the unit's
+  journal) from the **log shipper**, and `fallback` (the app's own SSH pull before deleting a
+  VPS that never came online). The shipper: `RunLog::shipperFiles()` puts `ship.sh`,
+  `curl.conf` (URL + bearer token, 0600) and the unit in `/root/.mvm-log` (putFiles chmods
+  every parent folder to 0700, so the unit can't be written into /etc/systemd/system: prepare.sh
+  `install`s it from there, right after the cloud-init wait). ship.sh polls
+  `journalctl -u <unit> --show-cursor --after-cursor` every 5 s and POSTs new lines; the cursor
+  is saved only after a 2xx, so nothing is lost or sent twice across restarts. It exits on
+  410/403/404, i.e. only when it next has lines to send after the run ended (runs end once the
+  VPS is deleted anyway). Intake: `POST /runs/{run}/log` (`RunLogIntakeController`, outside
+  the web middleware like /version: no session, no CSRF, no cookie; `throttle:run-log` 60/min per
+  run; 404 for an unknown run or a wrong token alike, 410 once ended, 413 over 512 KB). A fresh
+  token per prepare attempt, only its SHA-256 on the run (`log_token_hash`, `$hidden`). Lines:
+  CR stripped, empty skipped, cut to 2,000 chars, newest 5,000 per run kept, all pruned after
+  14 days (`servers:prune-logs`, daily): Minecraft logs player names and IPs, admins only.
+  `abandon()` (boot timeout and failed setup) pulls `RunLog::fallbackCommand()` (journal 200
+  lines, systemctl status, cloud-init tail; 25 s) before deleting, then appends
+  `RunLog::diagnose()` to the error as "Likely cause: …" (EULA, Java too old with the version
+  from the class-file numbers, memory, missing jar, start command not runnable, port, Java not
+  installed). It reads only from the last `systemd[1]: Started minecraft-…` line, so an earlier
+  attempt's error doesn't stick. Admin → Servers → Log (`ServerLogController`): the last 10
+  runs, the newest 1,000 lines, polls `/admin/servers/{slug}/log/lines?run=&after=` every 3 s
+  while the run is active.
+  Checked for real (Nov 22) with a systemd container (`ubuntu:24.04` + systemd, `--privileged
+  --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw`, real journald, cloud-init's own unit and
+  start script, a stub `java` that checks eula.txt like Minecraft) posting to the app under
+  `artisan serve` in `php:8.4-cli` on the same network: EULA lines arrived and were diagnosed,
+  `./run.sh` went 644 → 755, with the box ticked eula.txt was written and "Done" arrived, the
+  restarted shipper resumed from its cursor, it exited on 410, no token on any command line.
+- EULA (#5367, from #5351's criteria): `servers.eula_accepted_at/by`, the "I accept the
+  Minecraft EULA for this server" box in the server form (ticking again keeps the first
+  acceptance, unticking clears it). Ticked, prepare.sh writes `eula.txt` with `eula=true`
+  before every start; unticked, it leaves the folder's own eula.txt alone. prepare.sh also
+  `chmod 0755`s top-level `*.sh` files, since the default start command is `./run.sh` and zips
+  made on Windows lose the executable bit.
 - DNS names (#5338, `App\Dns`): Admin → DNS (`DnsController`, `DnsSetting`, one row: domain,
   Cloudflare zone id, `api_token` encrypted + `$hidden`). Only `/zones/{id}/dns_records` is
   called, so an "Edit zone DNS" token for one zone is enough (no Zone Read for `/zones`).

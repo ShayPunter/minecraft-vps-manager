@@ -89,6 +89,10 @@ class AppServiceProvider extends ServiceProvider
         // Start creates a VPS (real money): a few a minute per person, or per IP for guests.
         RateLimiter::for('server-start', fn (Request $request): Limit => Limit::perMinute(5)
             ->by($request->user()?->id !== null ? 'user:'.$request->user()->id : 'ip:'.$request->ip()));
+
+        // A run's log shipper posts about every 5 seconds (#5367).
+        RateLimiter::for('run-log', fn (Request $request): Limit => Limit::perMinute(60)
+            ->by('run:'.(string) $request->route('run')));
     }
 
     /**

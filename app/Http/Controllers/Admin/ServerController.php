@@ -44,7 +44,8 @@ class ServerController extends Controller
 
     public function store(ServerRequest $request): RedirectResponse
     {
-        $server = Server::query()->create($request->validated());
+        $server = Server::query()->create($request->safe()->except('eula'));
+        $this->recordEula($request, $server);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => "Created {$server->name}."]);
 
@@ -61,7 +62,11 @@ class ServerController extends Controller
         }
 
         return Inertia::render('admin/servers/Edit', [
-            'server' => $server->only(['id', 'name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain']),
+            'server' => [
+                ...$server->only(['id', 'name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain']),
+                'eula_accepted_at' => $server->eula_accepted_at?->toIso8601String(),
+                'eula_accepted_by' => $server->eulaAcceptor?->name,
+            ],
             'dnsDomain' => app(Dns::class)->saved()?->domain,
             'catalog' => $catalog->formOptions(),
             'javaVersions' => config('minecraft.java_versions'),
@@ -87,11 +92,30 @@ class ServerController extends Controller
 
     public function update(ServerRequest $request, Server $server): RedirectResponse
     {
-        $server->update($request->validated());
+        $server->update($request->safe()->except('eula'));
+        $this->recordEula($request, $server);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => "Saved {$server->name}. Changes apply from the next start."]);
 
         return to_route('admin.servers.index');
+    }
+
+    /**
+     * Who accepted the Minecraft EULA for this server, and when (#5367). Ticking it again
+     * keeps the first acceptance; unticking clears it.
+     */
+    private function recordEula(ServerRequest $request, Server $server): void
+    {
+        if ($request->boolean('eula') && $server->eula_accepted_at === null) {
+            $server->eula_accepted_at = now();
+            $server->eula_accepted_by = $request->user()?->id;
+            $server->save();
+            Log::info('Minecraft EULA accepted', ['server' => $server->slug, 'by' => $request->user()?->id]);
+        } elseif (! $request->boolean('eula') && $server->eula_accepted_at !== null) {
+            $server->eula_accepted_at = null;
+            $server->eula_accepted_by = null;
+            $server->save();
+        }
     }
 
     /**
