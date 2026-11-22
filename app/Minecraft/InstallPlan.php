@@ -34,7 +34,7 @@ final readonly class InstallPlan
             }
         }
 
-        if (preg_match('/^[A-Za-z0-9 .()+_-]{1,100}$/', $description) !== 1) {
+        if (preg_match('/^[A-Za-z0-9 .,()+_-]{1,100}$/', $description) !== 1) {
             throw new InvalidArgumentException('Refusing the install description.');
         }
 

@@ -135,6 +135,7 @@ test('an admin sets up world storage, uploads a world and downloads it again', a
     await page.goto('/admin/servers/create');
     await page.getByLabel('Name').fill('Storage Test');
     await page.getByLabel('Slug').fill('storage-test');
+    await page.getByLabel('Software').selectOption('custom');
     await page.getByLabel('Java version').selectOption('21');
     await page.locator('[data-test="save-server"]').click();
     await expect(page.getByText('Created Storage Test.')).toBeVisible();

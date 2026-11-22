@@ -27,6 +27,7 @@ async function createServer(
     if (isPublic) {
         await page.getByLabel(/^Public/).check();
     }
+    await page.getByLabel('Software').selectOption('custom');
     await page.getByLabel('Java version').selectOption('17');
     await page.locator('[data-test="save-server"]').click();
 
