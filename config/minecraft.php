@@ -23,7 +23,13 @@ return [
     // Alert once when a run has been up longer than this (#5276: 8 hours).
     'max_run_hours' => (int) (env('MVM_MAX_RUN_HOURS') ?: 8),
     // A stop still "stopping" after this long (the queue worker died) becomes stop_failed.
-    'stuck_stop_minutes' => 15,
+    // Above StopServerRun's timeout (45 min), since a big world can take that long to upload.
+    'stuck_stop_minutes' => 50,
+    // World storage (#5288), in seconds: prepare.sh waits for cloud-init and downloads the world;
+    // save.sh zips, uploads and reads the world back. Below PrepareServerRun's and
+    // StopServerRun's job timeouts, which are below the queue's retry_after.
+    'prepare_timeout' => 1200,
+    'save_timeout' => 2400,
     // Where alerts go: this address (else every admin's email), plus a Discord webhook if set.
     'alert_mail' => env('MVM_ALERT_MAIL') ?: null,
     'alert_discord_webhook' => env('MVM_ALERT_DISCORD_WEBHOOK') ?: null,

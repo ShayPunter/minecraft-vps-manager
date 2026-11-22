@@ -40,8 +40,9 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            // Above StopServerRun's 600 s timeout, or a slow world save would be picked up twice.
-            'retry_after' => (int) (env('DB_QUEUE_RETRY_AFTER') ?: 900),
+            // Above StopServerRun's (2700 s) and PrepareServerRun's (1500 s) timeouts, or a slow world
+            // save or download would be picked up twice (#5288).
+            'retry_after' => (int) (env('DB_QUEUE_RETRY_AFTER') ?: 3600),
             'after_commit' => false,
         ],
 

@@ -7,9 +7,10 @@ saves the world and deletes the VPS, so it only costs money while people play.
 ## Status
 
 Being revived (November 2026) on Laravel 13, Hetzner Cloud and Laravel Forge. Done so far:
-accounts, admin pages for users and servers, the Hetzner client, start, and the watchdog.
-World storage over SFTP (set in Admin → World storage) comes next. Until then each start
-begins with a fresh world.
+accounts, admin pages for users and servers, the Hetzner client, start, the watchdog, and
+world storage: worlds live on an SFTP or FTP(S) server between sessions (Admin → World
+storage). A start downloads the server's current world onto the VPS; a stop uploads a new
+one before the VPS is deleted. Servers can't start until world storage is set up.
 
 - Sign-up is off. An admin creates every account (Admin → Users).
 - Two roles: **admin** (manages users and servers) and **player**.
@@ -41,8 +42,10 @@ begins with a fresh world.
     | `MVM_MAX_RUN_HOURS`         | alert once when a run is older than this (default 8)                 |
     | `MVM_BOOT_TIMEOUT_MINUTES`  | give up on a start that isn't online by then (default 20)            |
 
-4. **Queue worker** (Forge → site → Queue): connection `database`, timeout `660`. A stop
-   saves the world over SSH first, which can take a few minutes for a big modpack.
+4. **Queue worker** (Forge → site → Queue): connection `database`, timeout `2800`, and
+   **2 processes**. A stop zips the world and uploads it from the VPS (up to 45 minutes for
+   a huge modpack), and a start waits for the VPS's first boot and downloads the world (up
+   to 25 minutes). With one process, another server's start waits behind them.
 5. **Scheduler** (Forge → site → Laravel scheduler, on). `servers:watch` runs every minute
    (idle stop, boot timeout) and `servers:sweep` every 10 minutes (orphan VPSes and SSH
    keys, retries).
@@ -52,19 +55,32 @@ begins with a fresh world.
    or your own server; a sub-account limited to one folder is best, since each VPS gets
    these credentials) or FTP (TLS on by default), fill in host, port, user, password or
    private key and a base folder, then **Test and save**. Saving tests the connection,
-   pins the SFTP host key and stores the secrets encrypted with `APP_KEY`.
+   pins the SFTP host key and stores the secrets encrypted with `APP_KEY`. Each VPS gets
+   the login only while Minecraft isn't running (before the start, after the stop), in a
+   root-only folder that is deleted when the transfer ends.
    For world/modpack uploads bigger than PHP's default 2 MB, raise `upload_max_filesize`
    and `post_max_size` (Forge → server → PHP) and nginx's `client_max_body_size` to match
    `MVM_WORLD_UPLOAD_MAX_MB` (default 4096).
 8. **Check it**: `php artisan app:doctor`. It tries the token with one read-only call, checks
    the app can make SSH keys, has the worker run a test job, checks the scheduler ran in the last
-   3 minutes, and says where alerts go. It prints no secrets and exits 1 if anything fails.
+   3 minutes, tests world storage (writes and deletes a small file), and says where alerts go. It prints no secrets and exits 1 if anything fails.
+
+### How a start works
+
+The VPS boots and installs Java (cloud-init). The app then logs in over SSH, downloads the
+server's current world archive straight from world storage onto the VPS, checks its size and
+SHA-256, unpacks it into the server folder (a zip holding a single folder, like most modpack
+server packs, is unpacked from inside that folder) and starts Minecraft. A server with no
+saved world starts with a new one. If the download or the check fails, the start fails and
+the VPS is deleted.
 
 ### How a stop works
 
 After a server's idle minutes with nobody on (default 15, set per server; boot time doesn't
-count), the watchdog runs `systemctl stop` on the VPS over SSH. That saves the world. Only
-when systemd reports a clean stop is the VPS deleted. If any step fails, the VPS is **kept**
+count), the watchdog runs `systemctl stop` on the VPS over SSH. That saves the world. When
+systemd reports a clean stop, the VPS zips the server folder, uploads it to world storage,
+downloads it again and compares the SHA-256, and the app checks the size on storage. Only
+then does it become the server's current world (the newest 3 are kept) and the VPS is deleted. If any step fails, the VPS is **kept**
 (it still costs money), an alert goes out, and the watchdog retries every 10 minutes.
 Admin → Servers shows the error, with Retry stop or Delete without saving. Admins and the
 person who started a server can also stop it by hand.

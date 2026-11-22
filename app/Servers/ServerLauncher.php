@@ -6,16 +6,22 @@ use App\Cloud\CloudException;
 use App\Cloud\CloudProvider;
 use App\Cloud\ServerSpec;
 use App\Enums\RunStatus;
+use App\Jobs\PrepareServerRun;
 use App\Jobs\ProvisionServerRun;
 use App\Jobs\StopServerRun;
 use App\Models\Server;
 use App\Models\ServerRun;
 use App\Models\User;
+use App\WorldStorage\Archives;
+use App\WorldStorage\StorageUnavailable;
+use App\WorldStorage\WorldStorage;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
+use Throwable;
 
 /**
  * The run state machine: every status change of a ServerRun happens here.
@@ -35,6 +41,8 @@ class ServerLauncher
         private readonly MinecraftProbe $probe,
         private readonly RemoteShell $shell,
         private readonly Alerter $alerter,
+        private readonly WorldStorage $storage,
+        private readonly Archives $archives,
     ) {}
 
     /**
@@ -42,6 +50,15 @@ class ServerLauncher
      */
     public function start(Server $server, ?User $user, ?string $ip): ServerRun
     {
+        // Without world storage a stop couldn't save the world (#5288): don't start at all.
+        try {
+            $this->storage->settings();
+        } catch (StorageUnavailable $e) {
+            Log::warning("Start of {$server->slug} refused: {$e->getMessage()}");
+
+            throw StartRefused::noWorldStorage();
+        }
+
         try {
             $run = Cache::lock('mvm:start', 15)->block(5, fn (): ServerRun => DB::transaction(function () use ($server, $user, $ip): ServerRun {
                 if ($server->activeRun()->exists()) {
@@ -196,6 +213,19 @@ class ServerLauncher
             }
         }
 
+        // The VPS is up: the world goes in and Minecraft starts (PrepareServerRun, once).
+        if ($run->status === RunStatus::Starting && $run->prepared_at === null) {
+            $run->save();
+            $this->queuePrepare($run);
+            $run->refresh();
+
+            if ($run->status !== RunStatus::Starting || $run->prepared_at === null) {
+                return;
+            }
+
+            $run->checked_at = now();
+        }
+
         if ($run->status === RunStatus::Starting && $run->ipv4 !== null
             && $this->probe->acceptsConnections($run->ipv4, (int) config('minecraft.port'))) {
             $run->status = RunStatus::Online;
@@ -247,8 +277,10 @@ class ServerLauncher
         }
 
         $server = $run->server;
+        // Minecraft ran on it (prepare.sh started it, or a run from before #5288 came online).
+        $started = $run->prepared_at !== null || $run->online_at !== null;
 
-        if (! $force && $run->online_at !== null && $run->ipv4 !== null && $run->provider_server_id !== null) {
+        if (! $force && $started && $run->ipv4 !== null && $run->provider_server_id !== null) {
             try {
                 $result = $this->shell->run($run->ipv4, CloudInit::stopCommand($server), 360, $run->ssh_private_key);
             } catch (RemoteShellException $e) {
@@ -261,6 +293,11 @@ class ServerLauncher
                 $output = trim($result->output);
                 $this->stopFailed($run, "Minecraft didn't stop cleanly (exit {$result->exitCode}".($output !== '' ? ": {$output}" : '').').');
 
+                return;
+            }
+
+            // A retried stop whose upload already worked (the delete failed) doesn't save twice.
+            if ($run->saved_world_archive_id === null && ! $this->saveWorld($run)) {
                 return;
             }
         }
@@ -313,6 +350,172 @@ class ServerLauncher
                 .'or delete the VPS without saving.',
             );
         }
+    }
+
+    /**
+     * Runs in PrepareServerRun once the VPS is up (#5288): put the storage login and
+     * prepare.sh on it, which waits for cloud-init, downloads and checks the current world
+     * and starts Minecraft. A VPS that can't be reached yet (sshd still starting) is tried
+     * again on the next check; the boot timeout still applies. A script that fails gives up:
+     * the VPS is deleted (Minecraft never ran there, so there's nothing to save).
+     */
+    public function prepare(ServerRun $run): void
+    {
+        $run->refresh();
+
+        if ($run->status !== RunStatus::Starting || $run->prepared_at !== null || $run->ipv4 === null) {
+            return;
+        }
+
+        $server = $run->server;
+        $archive = $server->currentWorldArchive;
+
+        try {
+            $storage = $archive !== null ? $this->storage->settings() : null;
+        } catch (StorageUnavailable $e) {
+            $this->giveUp($run, "The saved world couldn't be downloaded: {$e->getMessage()}");
+
+            return;
+        }
+
+        try {
+            $this->shell->putFiles($run->ipv4, WorldSync::prepareFiles($server, $archive, $storage), $run->ssh_private_key);
+            $result = $this->shell->run($run->ipv4, WorldSync::PREPARE_COMMAND, (int) config('minecraft.prepare_timeout'), $run->ssh_private_key);
+        } catch (RemoteShellException $e) {
+            Log::info("Run {$run->id}: VPS not ready for the world yet, trying again: {$e->getMessage()}");
+            $this->retryPrepare($run);
+
+            return;
+        }
+
+        if ($result->exitCode === WorldSync::EXIT_BUSY) {
+            $this->retryPrepare($run);
+
+            return;
+        }
+
+        if (! $result->succeeded()) {
+            $output = mb_substr(trim($result->output), -500);
+            $this->giveUp($run, "Setting up the server failed (exit {$result->exitCode}".($output !== '' ? ": {$output}" : '').').');
+
+            return;
+        }
+
+        $run->refresh();
+
+        if ($run->status !== RunStatus::Starting) {
+            return;
+        }
+
+        $run->prepared_at = now();
+        $run->world_archive_id = $archive?->id;
+        $run->save();
+    }
+
+    private function queuePrepare(ServerRun $run): void
+    {
+        $queued = ServerRun::query()
+            ->whereKey($run->id)
+            ->whereNull('prepare_queued_at')
+            ->update(['prepare_queued_at' => now()]);
+
+        if ($queued === 1) {
+            PrepareServerRun::dispatch($run->id);
+        }
+    }
+
+    public function retryPrepare(ServerRun $run): void
+    {
+        ServerRun::query()->whereKey($run->id)->update(['prepare_queued_at' => null]);
+    }
+
+    /**
+     * prepare() can't go on: delete the VPS and fail the run. If the provider won't delete it
+     * now, the run stays as it is and the boot timeout deals with it.
+     */
+    private function giveUp(ServerRun $run, string $error): void
+    {
+        try {
+            $this->abandon($run, $error);
+        } catch (CloudException $e) {
+            Log::warning("Run {$run->id}: couldn't delete the VPS after a failed setup ({$error}): {$e->getMessage()}");
+            $run->error = mb_substr($error, 0, 1000);
+            $run->save();
+        }
+    }
+
+    /**
+     * After the clean stop: save.sh zips the server folder, uploads it, reads it back and
+     * compares the SHA-256. The app then checks the size on storage itself before the archive
+     * becomes the server's current one. Any failure → stop_failed: the VPS (and the world on
+     * it) is kept, and the next try saves again.
+     */
+    private function saveWorld(ServerRun $run): bool
+    {
+        $server = $run->server;
+        $host = (string) $run->ipv4;
+
+        try {
+            $storage = $this->storage->settings();
+        } catch (StorageUnavailable $e) {
+            $this->stopFailed($run, "Minecraft stopped, but the world couldn't be saved: {$e->getMessage()}");
+
+            return false;
+        }
+
+        $path = $this->archives->newPath($server, 'save.zip');
+
+        try {
+            $this->shell->putFiles($host, WorldSync::saveFiles($server, $storage), $run->ssh_private_key);
+            $result = $this->shell->run($host, WorldSync::saveCommand($server, $path), (int) config('minecraft.save_timeout'), $run->ssh_private_key);
+        } catch (RemoteShellException $e) {
+            $this->stopFailed($run, "Minecraft stopped, but uploading the world failed: {$e->getMessage()}");
+
+            return false;
+        }
+
+        if (! $result->succeeded()) {
+            $output = mb_substr(trim($result->output), -500);
+            $this->stopFailed($run, "Minecraft stopped, but uploading the world failed (exit {$result->exitCode}".($output !== '' ? ": {$output}" : '').').');
+
+            return false;
+        }
+
+        try {
+            $saved = WorldSync::parseSaveOutput($result->output);
+        } catch (InvalidArgumentException $e) {
+            $this->stopFailed($run, "Minecraft stopped, but the upload didn't finish: {$e->getMessage()}");
+
+            return false;
+        }
+
+        if ($saved === null) {
+            Log::info("Run {$run->id}: the server folder was empty, nothing to save.");
+
+            return true;
+        }
+
+        try {
+            $stored = $this->storage->disk($storage)->size($path);
+        } catch (Throwable $e) {
+            $this->stopFailed($run, "The world was uploaded, but the app couldn't check it on world storage: {$e->getMessage()}");
+
+            return false;
+        }
+
+        if ($stored !== $saved['size']) {
+            $this->stopFailed($run, "World storage has {$stored} bytes of the {$saved['size']} uploaded.");
+
+            return false;
+        }
+
+        $archive = $this->archives->record($server, $path, $saved['size'], $saved['sha256'], 'save', $run);
+        $run->saved_world_archive_id = $archive->id;
+        $run->save();
+
+        Log::info('World saved', ['server' => $server->slug, 'run' => $run->id, 'archive' => $archive->id, 'size' => $saved['size']]);
+
+        return true;
     }
 
     private function fail(ServerRun $run, string $error): void

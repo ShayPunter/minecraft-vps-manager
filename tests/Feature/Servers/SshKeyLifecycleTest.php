@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use phpseclib3\Crypt\Common\PrivateKey;
 use phpseclib3\Crypt\PublicKeyLoader;
+use Tests\Concerns\UsesFakeWorldStorage;
 use Tests\TestCase;
 
 /**
@@ -30,10 +31,12 @@ use Tests\TestCase;
 class SshKeyLifecycleTest extends TestCase
 {
     use RefreshDatabase;
+    use UsesFakeWorldStorage;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->useFakeWorldStorage();
 
         Notification::fake();
         config(['minecraft.alert_mail' => 'ops@example.com']);
@@ -75,6 +78,8 @@ class SshKeyLifecycleTest extends TestCase
         $this->artisan('servers:watch')->assertSuccessful();
         $run->refresh();
         $this->assertSame(RunStatus::Online, $run->status);
+        // The start ran prepare.sh (#5288); the tests below look at the stop.
+        $this->shell()->forget();
 
         return $run;
     }
@@ -143,7 +148,7 @@ class SshKeyLifecycleTest extends TestCase
 
         $run->refresh();
         $this->assertSame(RunStatus::Stopped, $run->status);
-        $this->assertSame([$privateKey], $this->shell()->keys());
+        $this->assertSame([$privateKey, $privateKey], $this->shell()->keys(), 'systemctl stop, then save.sh.');
         $this->assertNull($run->ssh_private_key);
         $this->assertNull($run->provider_ssh_key_id);
         $this->assertSame([], $this->cloud()->managedSshKeys());
@@ -171,7 +176,8 @@ class SshKeyLifecycleTest extends TestCase
 
         $run->refresh();
         $this->assertSame(RunStatus::Stopped, $run->status, 'The sweep retried the stop.');
-        $this->assertSame([$privateKey, $privateKey], $this->shell()->keys());
+        // The failed try, then the retry's stop and save.
+        $this->assertSame([$privateKey, $privateKey, $privateKey], $this->shell()->keys());
         // The key delete failed during that retry: wiped on the run, left at the provider…
         $this->assertNull($run->ssh_private_key);
         $this->assertCount(1, $this->cloud()->managedSshKeys());
@@ -243,7 +249,7 @@ class SshKeyLifecycleTest extends TestCase
         $this->launcher()->requestStop($run, 'admin');
 
         $this->assertSame(RunStatus::Stopped, $run->refresh()->status);
-        $this->assertSame([null], $this->shell()->keys(), 'null = SshRemoteShell falls back to the old key file.');
+        $this->assertSame([null, null], $this->shell()->keys(), 'null = SshRemoteShell falls back to the old key file.');
     }
 
     public function test_the_sweep_deletes_unused_managed_keys_and_nothing_else(): void

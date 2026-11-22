@@ -16,20 +16,24 @@ use App\Servers\FakeRemoteShell;
 use App\Servers\MinecraftProbe;
 use App\Servers\RemoteShell;
 use App\Servers\ServerLauncher;
+use App\Servers\WorldSync;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia;
+use Tests\Concerns\UsesFakeWorldStorage;
 use Tests\TestCase;
 
 class WatchdogTest extends TestCase
 {
     use RefreshDatabase;
+    use UsesFakeWorldStorage;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->useFakeWorldStorage();
 
         Notification::fake();
         config(['minecraft.alert_mail' => 'ops@example.com']);
@@ -82,6 +86,8 @@ class WatchdogTest extends TestCase
 
         $run->refresh();
         $this->assertSame(RunStatus::Online, $run->status);
+        // The start ran prepare.sh (#5288); the tests below look at the stop.
+        $this->shell()->forget();
 
         return $run;
     }
@@ -115,12 +121,16 @@ class WatchdogTest extends TestCase
         $this->assertNull($run->active_server_id);
         $this->assertNull($this->cloud()->findServer($vpsId));
 
-        // Minecraft was stopped cleanly over SSH on the VPS before it was deleted.
+        // Minecraft was stopped cleanly over SSH, then the world was uploaded (#5288), and
+        // only then was the VPS deleted.
         $commands = $this->shell()->commands();
-        $this->assertCount(1, $commands);
+        $this->assertCount(2, $commands);
         $this->assertSame($run->ipv4, $commands[0]['host']);
         $this->assertStringStartsWith('systemctl stop minecraft-vanilla.service; ', $commands[0]['command']);
         $this->assertStringContainsString('sync;', $commands[0]['command']);
+        $this->assertStringStartsWith(WorldSync::SAVE_COMMAND." 'vanilla/", $commands[1]['command']);
+        $this->assertNotNull($run->saved_world_archive_id);
+        $this->assertSame($run->saved_world_archive_id, $run->server->refresh()->current_world_archive_id);
         Notification::assertNothingSent();
     }
 
@@ -301,8 +311,8 @@ class WatchdogTest extends TestCase
         $this->assertNull($run->active_server_id);
         $this->assertStringContainsString("wasn't online within 20 minutes", (string) $run->error);
         $this->assertNull($this->cloud()->findServer($vpsId));
-        // Never online, so there was no world to save.
-        $this->assertSame([], $this->shell()->commands());
+        // Never online: prepare.sh ran, but there was no world to save.
+        $this->assertSame([WorldSync::PREPARE_COMMAND], array_column($this->shell()->commands(), 'command'));
         $this->assertAlerted("Broken didn't start");
     }
 
@@ -359,7 +369,12 @@ class WatchdogTest extends TestCase
         $run->status = RunStatus::Stopping;
         $run->save();
 
-        $this->travel(16)->minutes();
+        // stuck_stop_minutes is 50: above StopServerRun's 45-minute timeout (#5288).
+        $this->travel(49)->minutes();
+        $this->sweep();
+        $this->assertSame(RunStatus::Stopping, $run->refresh()->status, 'A long upload is still running.');
+
+        $this->travel(2)->minutes();
         $this->sweep();
 
         // Marked stop_failed (alerted), then retried in the same sweep, which works.
@@ -429,7 +444,7 @@ class WatchdogTest extends TestCase
         $run->refresh();
         $this->assertSame(RunStatus::Stopped, $run->status);
         $this->assertSame('starter', $run->stop_reason);
-        $this->assertCount(1, $this->shell()->commands());
+        $this->assertCount(2, $this->shell()->commands(), 'systemctl stop, then save.sh.');
 
         $this->assertSame('admin', $this->stopAsAdminAndGetReason($admin));
     }

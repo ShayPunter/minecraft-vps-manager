@@ -40,7 +40,7 @@ class E2ESeeder extends Seeder
             'created_at' => now()->subYear(),
         ]);
 
-        // world-storage.spec (#5288), its own admin for the same reason.
+        // admin-world-storage.spec (#5288), its own admin for the same reason.
         User::factory()->admin()->create([
             'name' => 'Sam Storage',
             'email' => 'storage-admin@example.com',

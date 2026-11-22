@@ -89,8 +89,8 @@ output. Run with the real binary:
   (`TcpMinecraftProbe::playersOnline`, checked against a real vanilla server in Docker);
   no answer counts as idle.
 - Stopping: `ServerLauncher::requestStop()` sets `stopping` (atomic update, so two clicks
-  or the watchdog can't double up) and queues `StopServerRun` (1 try, 600 s timeout; the
-  database queue's `retry_after` defaults to 900 for it). `stop()`: a run that was ever
+  or the watchdog can't double up) and queues `StopServerRun` (1 try, 2700 s timeout; the
+  database queue's `retry_after` defaults to 3600 for it). `stop()`: a run that was ever
   online first gets `CloudInit::stopCommand()` over SSH as root (`systemctl stop` = SIGTERM,
   Minecraft's shutdown hook saves the worlds; the unit has `SuccessExitStatus=0 143` and
   `TimeoutStopSec=300`, and the command fails unless systemd's `Result` is `success`), then
@@ -98,11 +98,12 @@ output. Run with the real binary:
   the cap, one alert (`Alerter`: `MVM_ALERT_MAIL` or every admin, plus
   `MVM_ALERT_DISCORD_WEBHOOK`). Admin → Servers then offers Retry stop and "Delete without
   saving" (`force=1`, only for `stop_failed`). World upload (#5288) goes between the SSH
-  stop and the delete. `provision()` deletes a VPS that arrives after its run ended.
+  stop and the delete (WorldSync below). `provision()` deletes a VPS that arrives after its run ended.
 - `app:doctor` (#5285): APP_URL https, Hetzner token (one read-only `locations()` call),
   the app can make an ed25519 pair (nothing to set up since #5324), queue worker (queues
   `QueueHeartbeat` and waits `--wait` s, 15 by default), scheduler (`servers:watch` beat in
-  the last 3 minutes), an admin exists, where alerts go. `App\Support\Heartbeat` keeps the
+  the last 3 minutes), an admin exists, world storage (the real connection test, #5288),
+  where alerts go. `App\Support\Heartbeat` keeps the
   beats in the cache as ISO strings; `servers:sweep` also queues a `QueueHeartbeat`. FAIL =
   exit 1, WARN doesn't fail. Never prints a secret (tested). The Forge setup steps are in the README.
 - Who can stop: admins (Admin → Servers, or the dashboard), and the signed-in user who
@@ -163,7 +164,44 @@ output. Run with the real binary:
   run it in `php:8.4-cli` on a Docker network with `atmoz/sftp:alpine` (no published port).
   `league/flysystem-ftp` needs ext-ftp, which this PC's PHP lacks: `composer` commands here
   need `--ignore-platform-req=ext-ftp` (CI and Forge have it).
-  Part 2 (start download, stop upload with SHA-256 check) is still to come.
+- World sync (#5288 part 2, `App\Servers\WorldSync`): two sh scripts the app writes to
+  `/root/.mvm` over SFTP (`RemoteShell::putFiles()`, phpseclib; parent folder 0700, files
+  created empty with their mode before the contents) and runs as root. **prepare.sh**
+  (`PrepareServerRun`, queued once by `advance()` when the VPS is running, guarded by
+  `server_runs.prepare_queued_at`): `cloud-init status --wait`, download the current archive,
+  check size + SHA-256 against the `WorldArchive` row, unzip (a zip holding one folder is
+  unpacked from inside it), `systemctl start`. Cloud-init no longer enables or starts the
+  unit. Minecraft is probed only once `prepared_at` is set. Can't connect (sshd not up) or
+  exit 75 (another script holds the `flock`) → `prepare_queued_at` cleared, tried on the
+  next check; any other failure → `abandon()` (VPS deleted, run failed). **save.sh** (in
+  `stop()`, after the clean `systemctl stop`, for runs with `prepared_at` or `online_at`):
+  refuses while the unit is active, zips the folder (`-y`, symlinks stored as links),
+  uploads `<path>.part`, downloads it again and compares the SHA-256, renames, prints
+  `size=… sha256=…` (or `empty=1` for an empty folder: nothing saved, the stop goes on).
+  The app then checks the size on storage with Flysystem and `Archives::record()`s it
+  (`source=save`, `server_runs.saved_world_archive_id`, so a retried stop after a failed
+  delete doesn't save twice). Any failure → `stop_failed`, VPS kept. SFTP uses OpenSSH's
+  `sftp` with a `known_hosts` holding the pinned key (`StrictHostKeyChecking=yes`); a
+  password goes through `SSH_ASKPASS` (`SSH_ASKPASS_REQUIRE=force`), and `-o BatchMode=no`
+  must come **before** `-b` or sftp's own BatchMode=yes wins. FTP uses curl with a
+  `--config` file (`user = "u:p"`, `\` and `"` escaped), `--ssl-reqd` for FTPS (curl checks
+  the certificate, PHP's FTP doesn't), `%2F` for an absolute base folder, rename with
+  `-Q "-RNFR …" -Q "-RNTO …"`. Secrets are only on the VPS while Minecraft isn't running and
+  never in a command line; the trap deletes them. Starts are refused (`StartRefused::noWorldStorage`)
+  while `WorldStorage::settings()` throws, and `app:doctor` runs the connection test.
+  Timeouts: prepare 1200 s (job 1500), save 2400 s (StopServerRun 2700), queue `retry_after`
+  3600, `stuck_stop_minutes` 50.
+  `FakeRemoteShell` answers prepare.sh with "prepared" and save.sh by writing a small zip to
+  the fake storage at the given path; `failMatching()`, `emptyWorld()`, `forget()`
+  (clears what the start recorded). Tests that start servers `use UsesFakeWorldStorage`
+  (`tests/Concerns`) and call it in `setUp`.
+  Checked for real (Nov 22) from an `ubuntu:24.04` container (openssh-client, zip, unzip,
+  curl; systemctl/cloud-init/java stubbed) on a private Docker network: `atmoz/sftp:alpine`
+  with a password holding a space, a quote and a backslash, and with a private key;
+  `delfer/alpine-ftp-server` (plain FTP, `chpasswd` for an odd password). Save, read-back,
+  rename, download, SHA-256 refusal, running-server refusal, wrong host key, single-folder
+  zip. `putFiles()` against an alpine sshd (`openssh-sftp-server` needed) from `php:8.4-cli`.
+  FTPS wasn't checked for real (no certificate in the test setup).
 - `App\Cloud` (#5281): `CloudProvider` interface (create/find/delete server, managed
   servers, create/delete/list managed SSH keys, server types, locations), `HetznerCloud`
   (Laravel `Http::`, token from `config('services.hetzner.*')`), `FakeCloudProvider` (state in the cache, so it survives

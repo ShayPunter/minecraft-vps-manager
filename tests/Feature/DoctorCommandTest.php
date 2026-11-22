@@ -3,16 +3,21 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Models\WorldStorageSetting;
 use App\Support\Heartbeat;
+use App\WorldStorage\WorldStorage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\UsesFakeWorldStorage;
 use Tests\TestCase;
 
 class DoctorCommandTest extends TestCase
 {
     use RefreshDatabase;
+    use UsesFakeWorldStorage;
 
     private function ready(): void
     {
+        $this->useFakeWorldStorage();
         config([
             'app.url' => 'https://minecraft.example.com',
             'services.hetzner.token' => 'test-token',
@@ -34,8 +39,20 @@ class DoctorCommandTest extends TestCase
             ->expectsOutputToContain('Made by the app for each VPS and deleted with it.')
             ->expectsOutputToContain('Ran a test job on the database queue.')
             ->expectsOutputToContain('servers:watch ran')
+            ->expectsOutputToContain('SFTP minecraft@storage.example.com:22, base folder minecraft-worlds: connected and writable.')
             ->expectsOutputToContain('Ready to start servers.')
             ->assertSuccessful();
+    }
+
+    public function test_world_storage_that_cant_be_reached_fails(): void
+    {
+        $this->ready();
+        WorldStorageSetting::query()->update(['host' => WorldStorage::FAKE_UNREACHABLE_HOST]);
+
+        $this->artisan('app:doctor', ['--wait' => 0])
+            ->expectsOutputToContain("Couldn't connect to unreachable.invalid:22")
+            ->doesntExpectOutputToContain('hunter2-secret')
+            ->assertFailed();
     }
 
     public function test_a_fresh_install_lists_what_is_missing(): void
@@ -53,6 +70,7 @@ class DoctorCommandTest extends TestCase
             ->doesntExpectOutputToContain('ssh-keygen')
             ->expectsOutputToContain("servers:watch hasn't run yet.")
             ->expectsOutputToContain('No admin yet.')
+            ->expectsOutputToContain("Servers can't start until it works")
             ->expectsOutputToContain('alert mails only reach the log')
             ->expectsOutputToContain('check(s) failed')
             ->assertFailed();

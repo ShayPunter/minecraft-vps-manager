@@ -33,7 +33,9 @@ class CloudInit
 
         $config = [
             'package_update' => true,
-            'packages' => ["openjdk-{$server->java_version}-jre-headless"],
+            // zip/unzip pack and unpack worlds (#5288, WorldSync); curl (FTP storage) and
+            // the OpenSSH sftp client are in Hetzner's Ubuntu image already.
+            'packages' => ["openjdk-{$server->java_version}-jre-headless", 'zip', 'unzip'],
             'write_files' => [
                 [
                     'path' => '/usr/local/bin/mvm-start',
@@ -51,10 +53,12 @@ class CloudInit
             'runcmd' => [
                 ['useradd', '--system', '--home-dir', self::BASE_DIR, '--shell', '/usr/sbin/nologin', 'minecraft'],
                 ['mkdir', '-p', $dir],
-                // World storage (#5288) downloads the world into $dir here, before the unit starts.
                 ['chown', '-R', 'minecraft:minecraft', self::BASE_DIR],
+                // Not enabled or started here (#5288): the app logs in once this has finished,
+                // puts the saved world in place and starts the unit (WorldSync's prepare.sh).
+                // Not enabled at all, so a reboot can't start an empty world that a stop
+                // would then save over the real one.
                 ['systemctl', 'daemon-reload'],
-                ['systemctl', 'enable', '--now', $unit],
             ],
         ];
 
