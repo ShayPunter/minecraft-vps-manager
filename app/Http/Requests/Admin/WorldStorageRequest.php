@@ -16,6 +16,8 @@ use Throwable;
 /**
  * Admin → World storage (#5288): test or save the settings. An empty password or key field
  * keeps the saved one (they are never sent to the browser); the "remove" boxes drop it.
+ * S3 (#5347) sends the access key as `username` and the secret key as `password`, and has
+ * no host or port of its own (they come from the endpoint).
  */
 class WorldStorageRequest extends FormRequest
 {
@@ -35,6 +37,10 @@ class WorldStorageRequest extends FormRequest
             'password' => filled($this->input('password')) ? $this->input('password') : null,
             'private_key' => is_string($privateKey) && trim($privateKey) !== '' ? str_replace("\r\n", "\n", trim($privateKey))."\n" : null,
             'ftps' => $this->boolean('ftps'),
+            'endpoint' => is_string($this->input('endpoint')) && trim($this->input('endpoint')) !== '' ? rtrim(trim($this->input('endpoint')), '/') : null,
+            'region' => is_string($this->input('region')) ? strtolower(trim($this->input('region'))) : $this->input('region'),
+            'bucket' => is_string($this->input('bucket')) ? trim($this->input('bucket')) : $this->input('bucket'),
+            'path_style' => $this->boolean('path_style'),
             'remove_password' => $this->boolean('remove_password'),
             'remove_private_key' => $this->boolean('remove_private_key'),
             'trust_new_host_key' => $this->boolean('trust_new_host_key'),
@@ -46,15 +52,22 @@ class WorldStorageRequest extends FormRequest
      */
     public function rules(): array
     {
+        $s3 = $this->input('driver') === 's3';
+
         return [
             'driver' => ['required', Rule::in(StorageSettings::DRIVERS)],
-            'host' => ['required', 'string', 'max:253', 'regex:'.StorageSettings::HOST_PATTERN],
-            'port' => ['required', 'integer', 'min:1', 'max:65535'],
+            'host' => $s3 ? ['exclude'] : ['required', 'string', 'max:253', 'regex:'.StorageSettings::HOST_PATTERN],
+            'port' => $s3 ? ['exclude'] : ['required', 'integer', 'min:1', 'max:65535'],
             'username' => ['required', 'string', 'regex:'.StorageSettings::USERNAME_PATTERN],
             'password' => ['nullable', 'string', 'max:500', 'not_regex:/[\r\n\0]/'],
             'private_key' => ['nullable', 'string', 'max:20000'],
-            'root' => ['required', 'string', 'max:200', 'regex:'.StorageSettings::ROOT_PATTERN, 'not_regex:/(^|\/)\.{1,2}(\/|$)/'],
+            // S3's prefix may be empty (worlds at the top of the bucket).
+            'root' => [$s3 ? 'nullable' : 'required', 'string', 'max:200', 'regex:'.StorageSettings::ROOT_PATTERN, 'not_regex:/(^|\/)\.{1,2}(\/|$)/'],
             'ftps' => ['boolean'],
+            'endpoint' => $s3 ? ['nullable', 'string', 'max:255', 'regex:'.StorageSettings::ENDPOINT_PATTERN] : ['exclude'],
+            'region' => $s3 ? ['required', 'string', 'regex:'.StorageSettings::REGION_PATTERN] : ['exclude'],
+            'bucket' => $s3 ? ['required', 'string', 'regex:'.StorageSettings::BUCKET_PATTERN, 'not_regex:/\.\./'] : ['exclude'],
+            'path_style' => ['boolean'],
             'remove_password' => ['boolean'],
             'remove_private_key' => ['boolean'],
             'trust_new_host_key' => ['boolean'],
@@ -71,6 +84,10 @@ class WorldStorageRequest extends FormRequest
             'username.regex' => 'Use letters, digits, dots, dashes and underscores only.',
             'root.regex' => 'A folder path like minecraft-worlds or backups/minecraft: letters, digits, dots, dashes and underscores.',
             'root.not_regex' => 'The base folder can\'t contain "." or ".." parts.',
+            'endpoint.regex' => 'Enter just the address, like https://fsn1.your-objectstorage.com (no bucket, path or query).',
+            'region.regex' => 'A region like eu-central-1, fsn1 or auto: lowercase letters, digits and dashes.',
+            'bucket.regex' => 'A bucket name: 3 to 63 lowercase letters, digits, dots and dashes.',
+            'bucket.not_regex' => 'A bucket name can\'t contain "..".',
         ];
     }
 
@@ -116,6 +133,10 @@ class WorldStorageRequest extends FormRequest
                 if ($settings->driver === 'ftp' && $settings->password === null) {
                     $validator->errors()->add('password', 'FTP needs a password.');
                 }
+
+                if ($settings->isS3() && $settings->password === null) {
+                    $validator->errors()->add('password', 'S3 needs the secret key.');
+                }
             },
         ];
     }
@@ -128,6 +149,28 @@ class WorldStorageRequest extends FormRequest
     {
         $saved = WorldStorageSetting::query()->first();
         $driver = (string) $this->input('driver');
+
+        if ($driver === 's3') {
+            $endpoint = $this->stringOrNull('endpoint');
+            $region = (string) $this->input('region');
+            [$host, $port] = StorageSettings::endpointHostAndPort($endpoint, $region);
+
+            return new StorageSettings(
+                driver: 's3',
+                host: $host,
+                port: $port,
+                username: (string) $this->input('username'),
+                password: $this->boolean('remove_password') ? null : ($this->stringOrNull('password') ?? $this->savedSecret($saved, 'password')),
+                privateKey: null,
+                root: (string) $this->input('root'),
+                ftps: false,
+                hostKey: null,
+                endpoint: $endpoint,
+                region: $region,
+                bucket: (string) $this->input('bucket'),
+                pathStyle: $this->boolean('path_style'),
+            );
+        }
 
         return new StorageSettings(
             driver: $driver,

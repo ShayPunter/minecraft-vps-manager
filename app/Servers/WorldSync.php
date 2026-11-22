@@ -4,6 +4,7 @@ namespace App\Servers;
 
 use App\Models\Server;
 use App\Models\WorldArchive;
+use App\WorldStorage\S3Upload;
 use App\WorldStorage\StorageSettings;
 use InvalidArgumentException;
 
@@ -45,7 +46,7 @@ class WorldSync
      *
      * @return array<string, array{0: string, 1: int}> remote path => [contents, mode]
      */
-    public static function prepareFiles(Server $server, ?WorldArchive $archive, ?StorageSettings $storage): array
+    public static function prepareFiles(Server $server, ?WorldArchive $archive, ?StorageSettings $storage, ?string $downloadUrl = null): array
     {
         self::checkSlug($server);
 
@@ -54,6 +55,15 @@ class WorldSync
         if ($archive !== null) {
             if ($storage === null) {
                 throw new InvalidArgumentException('Downloading a world needs the storage settings.');
+            }
+
+            if ($storage->isS3()) {
+                // S3 (#5347): only a pre-signed link for this one archive, no keys.
+                if ($downloadUrl === null) {
+                    throw new InvalidArgumentException('Downloading a world from S3 needs a pre-signed link.');
+                }
+
+                return $files + [self::DIR.'/get.conf' => [self::curlUrl($downloadUrl), 0600]];
             }
 
             $files += self::loginFiles($storage);
@@ -67,9 +77,25 @@ class WorldSync
      *
      * @return array<string, array{0: string, 1: int}>
      */
-    public static function saveFiles(Server $server, StorageSettings $storage): array
+    public static function saveFiles(Server $server, StorageSettings $storage, ?S3Upload $upload = null): array
     {
         self::checkSlug($server);
+
+        if ($storage->isS3()) {
+            if ($upload === null || $upload->partUrls === []) {
+                throw new InvalidArgumentException('Saving a world to S3 needs a started upload.');
+            }
+
+            self::checkStorage($storage);
+
+            return [
+                self::DIR.'/save.sh' => [self::s3SaveScript($server, $upload), 0700],
+                // One curl config line per part, so the script copies line n into a file.
+                self::DIR.'/parts' => [implode('', array_map(self::curlUrl(...), $upload->partUrls)), 0600],
+                self::DIR.'/complete.conf' => [self::curlUrl($upload->completeUrl), 0600],
+                self::DIR.'/get.conf' => [self::curlUrl($upload->readBackUrl), 0600],
+            ];
+        }
 
         return [self::DIR.'/save.sh' => [self::saveScript($server, $storage), 0700]] + self::loginFiles($storage);
     }
@@ -217,7 +243,7 @@ class WorldSync
             exec 9>"$M/lock"
             if ! flock -n 9; then echo "Another world setup or save is still running on this VPS."; exit 75; fi
             # The storage login is only here while this script runs.
-            cleanup() { rm -rf "$M/work" "$M/key" "$M/password" "$M/askpass" "$M/curl.conf" "$M/known_hosts"; }
+            cleanup() { rm -rf "$M/work" "$M/key" "$M/password" "$M/askpass" "$M/curl.conf" "$M/known_hosts" "$M/get.conf" "$M/parts" "$M/complete.conf"; }
             trap cleanup EXIT
 
             SH;
@@ -230,6 +256,15 @@ class WorldSync
     private static function transferFunctions(StorageSettings $storage): string
     {
         self::checkStorage($storage);
+
+        if ($storage->isS3()) {
+            // The link in get.conf is for one object, so the remote path isn't needed.
+            return self::s3Curl()
+                .<<<'SH'
+                fetch() { cu --config "$M/get.conf" -o "$2"; }
+
+                SH;
+        }
 
         $root = rtrim($storage->root, '/');
 
@@ -330,8 +365,114 @@ class WorldSync
         }
     }
 
+    /**
+     * save.sh for S3 (#5347). The app has already started a multipart upload at the archive
+     * path; this zips the folder, PUTs it in parts with the pre-signed links in $M/parts
+     * (one part at a time, so the disk never holds a second copy), completes the upload with
+     * the ETags S3 handed back, then downloads the finished object and compares the SHA-256.
+     * Nothing is renamed: an unfinished multipart upload is invisible, and the app deletes
+     * the object if the check (or its own size check) fails.
+     */
+    private static function s3SaveScript(Server $server, S3Upload $upload): string
+    {
+        if ($upload->partBytes % (1024 * 1024) !== 0) {
+            throw new InvalidArgumentException('S3 part sizes are whole MB.');
+        }
+
+        $partMb = intdiv($upload->partBytes, 1024 * 1024);
+        $maxParts = count($upload->partUrls);
+
+        return self::header($server, 'zip the server folder and upload it to S3 world storage')
+            .self::s3Curl()
+            .<<<'SH'
+            fetch() { cu --config "$M/get.conf" -o "$2"; }
+            P="$1"
+            case "$P" in
+                *[!A-Za-z0-9._/-]*|*..*|/*) echo "Refusing archive path $P"; exit 2 ;;
+            esac
+            if systemctl is-active --quiet "$UNIT"; then echo "Minecraft is still running: not saving a live world."; exit 30; fi
+            if [ ! -d "$DIR" ] || [ -z "$(ls -A "$DIR")" ]; then echo "empty=1"; exit 0; fi
+            rm -rf "$M/work"
+            mkdir -p "$M/work"
+            (cd "$DIR" && zip -q -r -y "$M/work/save.zip" .)
+            size=$(stat -c %s "$M/work/save.zip")
+            sum=$(sha256sum "$M/work/save.zip" | cut -d " " -f 1)
+
+            SH
+            ."PART_MB={$partMb}\nMAX_PARTS={$maxParts}\n"
+            .<<<'SH'
+            PART=$((PART_MB * 1048576))
+            parts=$(( (size + PART - 1) / PART ))
+            if [ "$parts" -gt "$MAX_PARTS" ]; then
+                echo "The world zip is $size bytes, more than one save can upload ($MAX_PARTS parts of $PART_MB MB). Raise MVM_S3_MAX_WORLD_GB."
+                exit 32
+            fi
+            printf '<CompleteMultipartUpload>' > "$M/work/complete.xml"
+            i=1
+            while [ "$i" -le "$parts" ]; do
+                dd if="$M/work/save.zip" of="$M/work/part" bs=1048576 skip=$(( (i - 1) * PART_MB )) count="$PART_MB" status=none
+                sed -n "${i}p" "$M/parts" > "$M/work/part.conf"
+                cu --config "$M/work/part.conf" -T "$M/work/part" -D "$M/work/headers" -o /dev/null
+                etag=$(grep -i '^etag:' "$M/work/headers" | tail -n 1 | cut -d ':' -f 2- | tr -d ' \r')
+                if [ -z "$etag" ]; then echo "World storage sent no ETag for part $i of $parts."; exit 33; fi
+                printf '<Part><PartNumber>%s</PartNumber><ETag>%s</ETag></Part>' "$i" "$etag" >> "$M/work/complete.xml"
+                rm -f "$M/work/part" "$M/work/part.conf" "$M/work/headers"
+                i=$((i + 1))
+            done
+            printf '</CompleteMultipartUpload>' >> "$M/work/complete.xml"
+            cu --config "$M/complete.conf" -X POST -H 'Content-Type: application/xml' --data-binary "@$M/work/complete.xml" -o "$M/work/complete.out"
+            # S3 can answer 200 with an error in the body when completing.
+            if ! grep -q 'CompleteMultipartUploadResult' "$M/work/complete.out"; then
+                echo "World storage didn't finish the upload: $(head -c 300 "$M/work/complete.out")"
+                exit 34
+            fi
+            fetch "$P" "$M/work/check.zip"
+            check=$(sha256sum "$M/work/check.zip" | cut -d " " -f 1)
+            rm -f "$M/work/check.zip"
+            if [ "$check" != "$sum" ]; then
+                echo "The uploaded world didn't read back the same (SHA-256 differs): nothing was kept."
+                exit 31
+            fi
+            rm -f "$M/work/save.zip"
+            echo "size=$size sha256=$sum"
+
+            SH;
+    }
+
+    /**
+     * curl for pre-signed links: the link itself is only ever in a --config file.
+     */
+    private static function s3Curl(): string
+    {
+        return <<<'SH'
+            cu() { curl --fail --silent --show-error --connect-timeout 20 --retry 3 --retry-delay 2 "$@"; }
+
+            SH;
+    }
+
+    /**
+     * One curl config line: `url = "…"`, with the escapes a double-quoted value takes.
+     */
+    private static function curlUrl(string $url): string
+    {
+        if (preg_match('/^https?:\/\/[^\s"\\\\]+$/', $url) !== 1) {
+            throw new InvalidArgumentException('Refusing a pre-signed link with spaces, quotes or backslashes.');
+        }
+
+        return 'url = "'.$url."\"\n";
+    }
+
     private static function checkStorage(StorageSettings $storage): void
     {
+        if ($storage->isS3()) {
+            if (preg_match(StorageSettings::BUCKET_PATTERN, (string) $storage->bucket) !== 1
+                || ($storage->root !== '' && (preg_match(StorageSettings::ROOT_PATTERN, $storage->root) !== 1 || str_contains($storage->root, '..')))) {
+                throw new InvalidArgumentException('The world storage settings hold characters a script on the VPS must not see.');
+            }
+
+            return;
+        }
+
         if (preg_match(StorageSettings::HOST_PATTERN, $storage->host) !== 1
             || preg_match(StorageSettings::USERNAME_PATTERN, $storage->username) !== 1
             || preg_match(StorageSettings::ROOT_PATTERN, $storage->root) !== 1

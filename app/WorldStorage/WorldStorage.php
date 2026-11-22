@@ -3,6 +3,7 @@
 namespace App\WorldStorage;
 
 use App\Models\WorldStorageSetting;
+use Aws\Exception\AwsException;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
@@ -147,6 +148,10 @@ class WorldStorage
             return ConnectionTest::failed("Couldn't connect to {$settings->host}:{$settings->port}: Connection timed out");
         }
 
+        if ($this->fake && $settings->isS3() && $settings->password === self::FAKE_WRONG_PASSWORD) {
+            return ConnectionTest::failed($this->s3Prefix($settings).'The request signature we calculated does not match the signature you provided. Check your key and signing method. (SignatureDoesNotMatch)');
+        }
+
         try {
             $disk = $this->disk($settings);
             $disk->put(self::PROBE_FILE, 'ok');
@@ -155,9 +160,11 @@ class WorldStorage
             $disk->deleteDirectory(self::PROBE_DIR);
         } catch (Throwable $e) {
             // SFTP has signed in by now; FTP signs in here, so its message can't say which step failed.
-            $prefix = $settings->driver === 'sftp'
-                ? "Signed in, but couldn't write to the base folder \"{$settings->root}\": "
-                : "Couldn't sign in or write to the base folder \"{$settings->root}\" on {$settings->host}:{$settings->port}: ";
+            $prefix = match ($settings->driver) {
+                'sftp' => "Signed in, but couldn't write to the base folder \"{$settings->root}\": ",
+                's3' => $this->s3Prefix($settings),
+                default => "Couldn't sign in or write to the base folder \"{$settings->root}\" on {$settings->host}:{$settings->port}: ",
+            };
 
             return ConnectionTest::failed($prefix.$this->describe($e), $hostKey);
         }
@@ -256,8 +263,32 @@ class WorldStorage
         return $key;
     }
 
+    private function s3Prefix(StorageSettings $settings): string
+    {
+        $where = $settings->root !== '' ? " under \"{$settings->root}/\"" : '';
+
+        return "Couldn't write to bucket \"{$settings->bucket}\"{$where} on {$settings->host}: ";
+    }
+
     private function describe(Throwable $e): string
     {
+        if ($e instanceof AwsException) {
+            // The SDK's own message holds the whole request URL; the error code and S3's
+            // sentence are what helps.
+            $code = $e->getAwsErrorCode();
+            $text = $e->getAwsErrorMessage();
+
+            if ($code !== null || $text !== null) {
+                return mb_substr(trim(($text ?? 'Request failed').($code !== null ? " ({$code})" : '')), 0, 300);
+            }
+        }
+
+        $previous = $e->getPrevious();
+
+        if ($previous instanceof AwsException) {
+            return $this->describe($previous);
+        }
+
         $message = trim($e->getMessage());
         $previous = $e->getPrevious();
 

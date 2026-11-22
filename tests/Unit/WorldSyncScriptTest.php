@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Models\Server;
 use App\Models\WorldArchive;
 use App\Servers\WorldSync;
+use App\WorldStorage\S3Upload;
 use App\WorldStorage\StorageSettings;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -148,6 +149,80 @@ class WorldSyncScriptTest extends TestCase
 
         $this->assertSame(['/root/.mvm/prepare.sh'], array_keys($files));
         $this->assertStringNotContainsString('fetch', $files['/root/.mvm/prepare.sh'][0]);
+    }
+
+    private function s3(array $overrides = []): StorageSettings
+    {
+        return $this->sftp([
+            'driver' => 's3', 'host' => 'fsn1.your-objectstorage.com', 'port' => 443, 'username' => 'AKIAKEY',
+            'password' => 's3-secret', 'hostKey' => null, 'endpoint' => 'https://fsn1.your-objectstorage.com',
+            'region' => 'fsn1', 'bucket' => 'mvm-worlds', ...$overrides,
+        ]);
+    }
+
+    private function upload(array $partUrls = ['https://s3.test/b/k?partNumber=1&X-Amz-Signature=a', 'https://s3.test/b/k?partNumber=2&X-Amz-Signature=b']): S3Upload
+    {
+        return new S3Upload('vanilla/20261122-190000-abcdef-save.zip', 'up-1', $partUrls, 64 * 1024 * 1024,
+            'https://s3.test/b/k?uploadId=up-1&X-Amz-Signature=c', 'https://s3.test/b/k?X-Amz-Signature=d');
+    }
+
+    public function test_s3_save_gets_links_only(): void
+    {
+        $files = WorldSync::saveFiles($this->server(), $this->s3(), $this->upload());
+
+        $this->assertSame(['/root/.mvm/save.sh', '/root/.mvm/parts', '/root/.mvm/complete.conf', '/root/.mvm/get.conf'], array_keys($files));
+        $this->assertSame(
+            "url = \"https://s3.test/b/k?partNumber=1&X-Amz-Signature=a\"\nurl = \"https://s3.test/b/k?partNumber=2&X-Amz-Signature=b\"\n",
+            $files['/root/.mvm/parts'][0],
+        );
+        $this->assertSame(0600, $files['/root/.mvm/parts'][1]);
+        $this->assertSame("url = \"https://s3.test/b/k?uploadId=up-1&X-Amz-Signature=c\"\n", $files['/root/.mvm/complete.conf'][0]);
+        $this->assertSame("url = \"https://s3.test/b/k?X-Amz-Signature=d\"\n", $files['/root/.mvm/get.conf'][0]);
+
+        $script = $files['/root/.mvm/save.sh'][0];
+        $this->assertStringContainsString("PART_MB=64\nMAX_PARTS=2\n", $script);
+        $this->assertStringContainsString('CompleteMultipartUploadResult', $script);
+        $this->assertStringNotContainsString('X-Amz-Signature', $script);
+
+        foreach ($files as $path => [$contents]) {
+            $this->assertStringNotContainsString('s3-secret', $contents, $path);
+            $this->assertStringNotContainsString('AKIAKEY', $contents, $path);
+        }
+    }
+
+    public function test_s3_needs_a_started_upload_and_a_download_link(): void
+    {
+        try {
+            WorldSync::saveFiles($this->server(), $this->s3());
+            $this->fail('Saved without an upload.');
+        } catch (InvalidArgumentException) {
+        }
+
+        $this->expectException(InvalidArgumentException::class);
+        WorldSync::prepareFiles($this->server(), $this->archive(), $this->s3());
+    }
+
+    public function test_s3_prepare_downloads_with_the_link(): void
+    {
+        $files = WorldSync::prepareFiles($this->server(), $this->archive(), $this->s3(), 'https://s3.test/b/k?X-Amz-Signature=e');
+
+        $this->assertSame(['/root/.mvm/prepare.sh', '/root/.mvm/get.conf'], array_keys($files));
+        $this->assertSame("url = \"https://s3.test/b/k?X-Amz-Signature=e\"\n", $files['/root/.mvm/get.conf'][0]);
+        $this->assertStringContainsString("[ \"\$sum\" != '".str_repeat('c', 64)."' ]", $files['/root/.mvm/prepare.sh'][0]);
+    }
+
+    public function test_links_with_quotes_or_spaces_are_refused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        WorldSync::saveFiles($this->server(), $this->s3(), $this->upload(['https://s3.test/b/k"; rm -rf /']));
+    }
+
+    public function test_an_s3_bucket_a_script_must_not_see_is_refused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        WorldSync::saveFiles($this->server(), $this->s3(['bucket' => "b';x"]), $this->upload());
     }
 
     public function test_the_save_output_is_read(): void
