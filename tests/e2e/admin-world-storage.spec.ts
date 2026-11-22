@@ -89,6 +89,24 @@ test('an admin sets up world storage, uploads a world and downloads it again', a
     ).toBeVisible();
     await expect(status).toContainText('Not set up');
 
+    // A refused sign-in says so, with what to check on a Storage Box (#5348).
+    await page
+        .getByLabel('Host', { exact: true })
+        .fill('u123456.your-storagebox.de');
+    await page.getByLabel('Port').fill('22');
+    await page.getByLabel('Password', { exact: true }).fill('wrong-password');
+    await page.locator('[data-test="save-storage"]').click();
+    await expect(
+        page.getByText(
+            'Not saved. Reached u123456.your-storagebox.de:22, but it refused to sign in user "u123456-sub1" with that password.',
+        ),
+    ).toBeVisible();
+    await expect(
+        page.getByText('"External reachability" must be on'),
+    ).toBeVisible();
+    await expect(status).toContainText('Not set up');
+    await page.getByLabel('Port').fill('23');
+
     // Test and save pins the host key.
     await page
         .getByLabel('Host', { exact: true })

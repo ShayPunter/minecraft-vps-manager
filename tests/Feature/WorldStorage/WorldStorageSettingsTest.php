@@ -143,6 +143,41 @@ class WorldStorageSettingsTest extends WorldStorageTestCase
         $this->assertSame(0, WorldStorageSetting::query()->count());
     }
 
+    public function test_a_refused_sign_in_says_so_and_saves_nothing(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $response = $this->actingAs($admin)->put('/admin/world-storage', $this->form([
+            'port' => 22,
+            'username' => 'u123456',
+            'password' => WorldStorage::FAKE_WRONG_PASSWORD,
+            'root' => 'mc-vps',
+        ]))->assertSessionHasErrors('connection');
+
+        $message = (string) session('errors')->first('connection');
+        $this->assertStringStartsWith('Not saved. Reached u123456.your-storagebox.de:22, but it refused to sign in user "u123456" with that password.', $message);
+        $this->assertStringContainsString('It accepts: publickey, password.', $message);
+        $this->assertStringContainsString('"External reachability" must be on', $message);
+        $this->assertStringNotContainsString("couldn't write", $message);
+        $this->assertStringNotContainsString(WorldStorage::FAKE_WRONG_PASSWORD, $message);
+        $this->assertSame(0, WorldStorageSetting::query()->count());
+        $response->assertRedirect();
+    }
+
+    public function test_a_refused_sign_in_elsewhere_has_no_storage_box_hint(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)->put('/admin/world-storage', $this->form([
+            'host' => 'storage.example.com',
+            'password' => WorldStorage::FAKE_WRONG_PASSWORD,
+        ]))->assertSessionHasErrors('connection');
+
+        $message = (string) session('errors')->first('connection');
+        $this->assertStringContainsString('refused to sign in user "u123456-sub1"', $message);
+        $this->assertStringNotContainsString('Hetzner', $message);
+    }
+
     public function test_test_connection_reports_without_saving(): void
     {
         $admin = User::factory()->admin()->create();

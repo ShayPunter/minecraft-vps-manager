@@ -6,6 +6,7 @@ use App\Models\WorldStorageSetting;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
+use phpseclib3\Crypt\PublicKeyLoader;
 use phpseclib3\Net\SFTP;
 use Throwable;
 
@@ -28,6 +29,9 @@ class WorldStorage
 
     // A host the fake treats as unreachable, so tests and E2E can see a failed test.
     public const FAKE_UNREACHABLE_HOST = 'unreachable.invalid';
+
+    // A password the fake SFTP server refuses, so tests and E2E can see a refused sign-in.
+    public const FAKE_WRONG_PASSWORD = 'wrong-password';
 
     public function __construct(
         private readonly bool $fake,
@@ -129,6 +133,14 @@ class WorldStorage
             }
 
             $settings = $settings->withHostKey($hostKey);
+
+            // Getting the host key needs no sign-in, so sign in on its own before writing
+            // anything: a refused login is then reported as that (#5348).
+            $refused = $this->signIn($settings);
+
+            if ($refused !== null) {
+                return ConnectionTest::failed($refused, $hostKey);
+            }
         }
 
         if ($this->fake && $settings->host === self::FAKE_UNREACHABLE_HOST) {
@@ -142,7 +154,12 @@ class WorldStorage
             $disk->delete(self::PROBE_FILE);
             $disk->deleteDirectory(self::PROBE_DIR);
         } catch (Throwable $e) {
-            return ConnectionTest::failed("Connected, but couldn't write to the base folder \"{$settings->root}\": ".$this->describe($e), $hostKey);
+            // SFTP has signed in by now; FTP signs in here, so its message can't say which step failed.
+            $prefix = $settings->driver === 'sftp'
+                ? "Signed in, but couldn't write to the base folder \"{$settings->root}\": "
+                : "Couldn't sign in or write to the base folder \"{$settings->root}\" on {$settings->host}:{$settings->port}: ";
+
+            return ConnectionTest::failed($prefix.$this->describe($e), $hostKey);
         }
 
         if ($size !== 2) {
@@ -150,6 +167,72 @@ class WorldStorage
         }
 
         return ConnectionTest::passed($hostKey);
+    }
+
+    /**
+     * Sign in the way Flysystem will (key first, then the password), and disconnect.
+     *
+     * @return string|null why it was refused (never with a secret in it), or null when it worked
+     */
+    private function signIn(StorageSettings $settings): ?string
+    {
+        if ($this->fake) {
+            return $settings->password === self::FAKE_WRONG_PASSWORD && $settings->privateKey === null
+                ? $this->refusedMessage($settings, ['publickey', 'password'])
+                : null;
+        }
+
+        try {
+            $sftp = new SFTP($settings->host, $settings->port, 15);
+            $signedIn = false;
+
+            if ($settings->privateKey !== null) {
+                $signedIn = $sftp->login($settings->username, PublicKeyLoader::load($settings->privateKey));
+            }
+
+            if (! $signedIn && $settings->password !== null) {
+                $signedIn = $sftp->login($settings->username, $settings->password);
+            }
+
+            $methods = $sftp->getAuthMethodsToContinue();
+            $sftp->disconnect();
+        } catch (Throwable $e) {
+            return "Couldn't sign in to {$settings->host}:{$settings->port}: ".$this->describe($e);
+        }
+
+        if ($signedIn) {
+            return null;
+        }
+
+        return $this->refusedMessage($settings, is_array($methods) ? array_values(array_filter($methods, 'is_string')) : []);
+    }
+
+    /**
+     * @param  list<string>  $methods  what the server said it accepts
+     */
+    private function refusedMessage(StorageSettings $settings, array $methods): string
+    {
+        $with = match (true) {
+            $settings->privateKey !== null && $settings->password !== null => 'that private key or password',
+            $settings->privateKey !== null => 'that private key',
+            default => 'that password',
+        };
+
+        $message = "Reached {$settings->host}:{$settings->port}, but it refused to sign in user \"{$settings->username}\" with {$with}.";
+
+        if ($methods !== []) {
+            $message .= ' It accepts: '.implode(', ', $methods).'.';
+        }
+
+        $message .= ' Check the user and the password or key.';
+
+        if (str_ends_with(strtolower($settings->host), '.your-storagebox.de')) {
+            $message .= ' On a Hetzner Storage Box the user is u123456 (u123456-sub1 for a sub-account), the password is the'
+                .' one set in the Hetzner Console (you can reset it there), and "External reachability" must be on'
+                .' unless this app runs inside Hetzner\'s network. SFTP is on port 22.';
+        }
+
+        return $message;
     }
 
     private function fetchHostKey(StorageSettings $settings): string
