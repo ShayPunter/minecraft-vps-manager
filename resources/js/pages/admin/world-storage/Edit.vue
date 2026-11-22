@@ -61,6 +61,9 @@ const defaultPorts = { sftp: 22, ftp: 21, s3: 443 } as const;
 
 const isS3 = computed(() => form.driver === 's3');
 
+// In the script, not the template: vue-tsc 3.3.13 misreads "https://" in a template attribute.
+const endpointPlaceholder = 'https://fsn1.your-objectstorage.com';
+
 // Switching type moves a default port along with it, and leaves a custom one alone.
 watch(
     () => form.driver,
@@ -161,11 +164,11 @@ const sourceLabel = computed(() => {
                         v-model="form.endpoint"
                         name="endpoint"
                         autocomplete="off"
-                        placeholder="https://fsn1.your-objectstorage.com"
+                        :placeholder="endpointPlaceholder"
                     />
                     <p class="text-sm text-muted-foreground">
-                        Leave empty for AWS. Hetzner Object Storage, Cloudflare R2,
-                        Backblaze B2 and MinIO each give you one.
+                        Leave empty for AWS. Hetzner Object Storage, Cloudflare
+                        R2, Backblaze B2 and MinIO each give you one.
                     </p>
                     <InputError :message="errors.endpoint" />
                 </div>
@@ -244,9 +247,7 @@ const sourceLabel = computed(() => {
             </div>
 
             <div class="grid gap-2">
-                <Label for="username">{{
-                    isS3 ? 'Access key' : 'User'
-                }}</Label>
+                <Label for="username">{{ isS3 ? 'Access key' : 'User' }}</Label>
                 <Input
                     id="username"
                     v-model="form.username"

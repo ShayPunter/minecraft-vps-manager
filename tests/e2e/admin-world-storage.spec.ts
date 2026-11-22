@@ -228,3 +228,61 @@ test('an admin sets up world storage, uploads a world and downloads it again', a
     ).toBeVisible();
     expect((await page.request.get(href!)).status()).toBe(404);
 });
+
+test('an admin switches world storage to S3 and back (#5347)', async ({
+    page,
+}) => {
+    await logIn(page, 'storage-admin@example.com');
+    await page.goto('/admin/world-storage');
+
+    await page.getByLabel('Type').selectOption('s3');
+    await expect(page.getByLabel('Host', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('Port')).toHaveCount(0);
+    await expect(page.getByLabel('Access key')).toBeVisible();
+    await expect(page.getByLabel('Folder prefix (optional)')).toBeVisible();
+
+    await page
+        .getByLabel('Endpoint')
+        .fill('https://fsn1.your-objectstorage.com');
+    await page.getByLabel('Region').fill('fsn1');
+    await page.getByLabel('Bucket', { exact: true }).fill('Not A Bucket');
+    await page.getByLabel('Access key').fill('AKIAE2EEXAMPLE');
+    await page.getByLabel('Secret key', { exact: true }).fill('e2e-secret-key');
+    await page.getByLabel('Folder prefix (optional)').fill('');
+    await page.locator('[data-test="save-storage"]').click();
+    await expect(page.getByText('A bucket name: 3 to 63')).toBeVisible();
+
+    await page.getByLabel('Bucket', { exact: true }).fill('mvm-worlds');
+    await page.locator('[data-test="save-storage"]').click();
+
+    const status = page.locator('[data-test="storage-status"]');
+    await expect(status).toContainText('Saved here');
+    await expect(status).toContainText(
+        'Ready: starts and stops use these settings.',
+    );
+    await page.reload();
+    await expect(page.getByLabel('Type')).toHaveValue('s3');
+    await expect(page.getByLabel('Bucket', { exact: true })).toHaveValue(
+        'mvm-worlds',
+    );
+    await expect(page.getByLabel('Secret key', { exact: true })).toHaveValue(
+        '',
+    );
+    await expect(
+        page.getByLabel('Secret key', { exact: true }),
+    ).toHaveAttribute('placeholder', 'Saved: leave empty to keep it');
+    expect(await page.content()).not.toContain('e2e-secret-key');
+
+    // Back to SFTP, so the specs after this one start and stop with it.
+    await page.getByLabel('Type').selectOption('sftp');
+    await page
+        .getByLabel('Host', { exact: true })
+        .fill('u123456.your-storagebox.de');
+    await page.getByLabel('Port').fill('23');
+    await page.getByLabel('User').fill('u123456-sub1');
+    await page.getByLabel('Password', { exact: true }).fill('storage-pass-123');
+    await page.getByLabel('Base folder').fill('minecraft-worlds');
+    await page.locator('[data-test="save-storage"]').click();
+    await expect(page.locator('[data-test="host-key"]')).toHaveText(/^SHA256:/);
+    await expect(page.getByLabel('Type')).toHaveValue('sftp');
+});

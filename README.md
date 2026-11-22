@@ -8,8 +8,8 @@ saves the world and deletes the VPS, so it only costs money while people play.
 
 Being revived (November 2026) on Laravel 13, Hetzner Cloud and Laravel Forge. Done so far:
 accounts, admin pages for users and servers, the Hetzner client, start, the watchdog, and
-world storage: worlds live on an SFTP or FTP(S) server between sessions (Admin → World
-storage). A start downloads the server's current world onto the VPS; a stop uploads a new
+world storage: worlds live on an SFTP or FTP(S) server or in an S3-compatible bucket between
+sessions (Admin → World storage). A start downloads the server's current world onto the VPS; a stop uploads a new
 one before the VPS is deleted. Servers can't start until world storage is set up.
 
 - Sign-up is off. An admin creates every account (Admin → Users).
@@ -58,6 +58,14 @@ one before the VPS is deleted. Servers can't start until world storage is set up
    pins the SFTP host key and stores the secrets encrypted with `APP_KEY`. Each VPS gets
    the login only while Minecraft isn't running (before the start, after the stop), in a
    root-only folder that is deleted when the transfer ends.
+   Or pick **S3-compatible** (Hetzner Object Storage, Cloudflare R2, Backblaze B2, AWS,
+   MinIO): endpoint (empty for AWS), region, bucket, access key, secret key and an optional
+   folder prefix; tick "Path-style URLs" for MinIO-style servers. A key limited to that one
+   bucket is best. With S3 the VPS never gets the keys: the app gives it pre-signed links
+   (one download link on start; on stop, links for a multipart upload in 128 MB parts, the
+   completion and a read-back) that expire after the job. Worlds up to 50 GB fit
+   (`MVM_S3_MAX_WORLD_GB`, `MVM_S3_PART_MB`). A bucket lifecycle rule that aborts incomplete
+   multipart uploads after a day cleans up after a VPS that died mid-save.
    For world/modpack uploads bigger than PHP's default 2 MB, raise `upload_max_filesize`
    and `post_max_size` (Forge → server → PHP) and nginx's `client_max_body_size` to match
    `MVM_WORLD_UPLOAD_MAX_MB` (default 4096).

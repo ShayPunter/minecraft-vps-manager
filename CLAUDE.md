@@ -202,6 +202,37 @@ output. Run with the real binary:
   rename, download, SHA-256 refusal, running-server refusal, wrong host key, single-folder
   zip. `putFiles()` against an alpine sshd (`openssh-sftp-server` needed) from `php:8.4-cli`.
   FTPS wasn't checked for real (no certificate in the test setup).
+- S3-compatible world storage (#5347): driver `s3` in the same `WorldStorageSetting` row.
+  The access key is `username`, the secret key `password` (so keep/remove/hidden work as for
+  SFTP), `root` is the key prefix (may be `''`), and `host`/`port` are derived from the
+  endpoint for messages only (`StorageSettings::endpointHostAndPort`; no endpoint = AWS).
+  New columns `endpoint`, `region`, `bucket`, `path_style`. The disk is
+  league/flysystem-aws-s3-v3; `StorageSettings::s3ClientConfig()` sets
+  `request_checksum_calculation`/`response_checksum_validation` to `when_required` (the SDK's
+  default CRC checksums break several S3-compatibles and pre-signed part uploads).
+  **The VPS never gets S3 keys.** `App\WorldStorage\S3Transfers`: `downloadUrl()` (pre-signed
+  GET, prepare_timeout + 600 s) for prepare.sh, `startUpload()` (the app calls
+  CreateMultipartUpload, then pre-signs UploadPart 1..n, CompleteMultipartUpload and a
+  read-back GET; n = s3_max_world_gb / s3_part_mb) for save.sh, `abort()` (abort + delete) on
+  every save that doesn't count, empty worlds included. Links go to the VPS as curl config
+  lines (`url = "…"`, `WorldSync::curlUrl` refuses quotes, spaces, backslashes) in
+  `get.conf`, `parts` (one line per part), `complete.conf`; never in a command line. The S3
+  save.sh cuts the zip with `dd` one part at a time (no second copy on disk), reads each
+  ETag from `curl -D`, POSTs the XML, checks the body for `CompleteMultipartUploadResult`
+  (S3 can answer 200 with an error), then downloads and compares the SHA-256. No `.part` +
+  rename: an unfinished multipart upload is invisible. Exits: 32 world bigger than the links,
+  33 no ETag, 34 completion refused, 31 read-back differs. In testing/e2e the links point at
+  `fake-s3.invalid` and `fakeLog()` records started/aborted uploads; the fake secret
+  `wrong-password` fails the connection test like SignatureDoesNotMatch.
+  `S3IntegrationTest` runs against CI's `adobe/s3mock:5.2.3` service (`MVM_S3_TEST_ENDPOINT`).
+  Checked for real (Nov 22) on a private Docker network: s3mock, `php:8.4-cli` (+ ext-zip via
+  `docker-php-ext-install`, the tree piped in, `MVM_S3_SCRIPT_DIR` writes the VPS files with
+  real links into a shared volume) and `ubuntu:24.04` running prepare.sh/save.sh (stubbed
+  systemctl/cloud-init/java): wrong hash refused, single-folder zip unpacked, a 12 MB world in
+  three 5 MB parts, too-big refused, running world refused, then `MVM_S3_SCRIPT_CHECK`
+  checked size + hash on the mock. s3mock doesn't check signatures, so a wrong key and link
+  expiry weren't tested for real; nor was a real provider.
+  E2E: "Bucket" also matches the "Path-style URLs (bucket in the path)" label: use `exact: true`.
 - DNS names (#5338, `App\Dns`): Admin → DNS (`DnsController`, `DnsSetting`, one row: domain,
   Cloudflare zone id, `api_token` encrypted + `$hidden`). Only `/zones/{id}/dns_records` is
   called, so an "Edit zone DNS" token for one zone is enough (no Zone Read for `/zones`).
