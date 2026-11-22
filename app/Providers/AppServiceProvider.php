@@ -11,6 +11,7 @@ use App\Servers\MinecraftProbe;
 use App\Servers\RemoteShell;
 use App\Servers\SshRemoteShell;
 use App\Servers\TcpMinecraftProbe;
+use App\WorldStorage\WorldStorage;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
@@ -58,6 +59,12 @@ class AppServiceProvider extends ServiceProvider
 
             return new SshRemoteShell((string) config('services.hetzner.legacy_ssh_private_key_path'));
         });
+
+        // Tests and E2E keep worlds in a local folder, whatever the settings say (#5288).
+        $this->app->singleton(WorldStorage::class, fn ($app): WorldStorage => new WorldStorage(
+            fake: $app->environment('testing', 'e2e') || config('world_storage.fake') === true,
+            fakeRoot: (string) config('world_storage.fake_root'),
+        ));
     }
 
     /**

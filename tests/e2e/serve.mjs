@@ -16,6 +16,11 @@ mkdirSync(dirname(db), { recursive: true });
 rmSync(db, { force: true });
 writeFileSync(db, '');
 
+// The fake world storage folder starts empty too.
+const worlds = process.env.WORLD_STORAGE_FAKE_ROOT;
+if (worlds && worlds.includes('mvm-e2e'))
+    rmSync(worlds, { recursive: true, force: true });
+
 // A stale hot file makes every page load from a dead Vite dev server.
 if (existsSync('public/hot')) rmSync('public/hot');
 

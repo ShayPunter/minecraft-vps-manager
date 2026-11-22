@@ -218,9 +218,28 @@ usePoll(5000, { only: ['servers'] });
                                                 <DialogDescription>
                                                     The server's settings and
                                                     run history go. Its saved
-                                                    world isn't touched.
+                                                    worlds stay in storage
+                                                    unless you tick the box.
                                                 </DialogDescription>
                                             </DialogHeader>
+                                            <div
+                                                class="flex items-center gap-2"
+                                            >
+                                                <input
+                                                    :id="`delete_archives_${server.slug}`"
+                                                    type="checkbox"
+                                                    name="delete_archives"
+                                                    value="1"
+                                                    class="size-4"
+                                                />
+                                                <label
+                                                    :for="`delete_archives_${server.slug}`"
+                                                    class="text-sm"
+                                                    >Also delete its saved
+                                                    worlds from storage (can't
+                                                    be undone)</label
+                                                >
+                                            </div>
                                             <DialogFooter class="gap-2">
                                                 <DialogClose as-child>
                                                     <Button variant="secondary"

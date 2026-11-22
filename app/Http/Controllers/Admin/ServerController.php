@@ -6,11 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\ServerStopController;
 use App\Http\Requests\Admin\ServerRequest;
 use App\Models\Server;
+use App\Models\WorldArchive;
 use App\Servers\ServerCatalog;
 use App\Servers\ServerLauncher;
 use App\Servers\ServerPresenter;
+use App\WorldStorage\Archives;
+use App\WorldStorage\StorageUnavailable;
+use App\WorldStorage\WorldStorage;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -44,12 +49,36 @@ class ServerController extends Controller
         return to_route('admin.servers.index');
     }
 
-    public function edit(Server $server, ServerCatalog $catalog): Response
+    public function edit(Server $server, ServerCatalog $catalog, WorldStorage $storage): Response
     {
+        try {
+            $storage->settings();
+            $storageProblem = null;
+        } catch (StorageUnavailable $e) {
+            $storageProblem = $e->getMessage();
+        }
+
         return Inertia::render('admin/servers/Edit', [
             'server' => $server->only(['id', 'name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes']),
             'catalog' => $catalog->formOptions(),
             'javaVersions' => config('minecraft.java_versions'),
+            'world' => [
+                'archives' => $server->worldArchives()->with('uploader:id,name')->orderByDesc('id')->get()
+                    ->map(fn (WorldArchive $archive): array => [
+                        'id' => $archive->id,
+                        'file_name' => $archive->fileName(),
+                        'size' => $archive->size,
+                        'sha256' => $archive->sha256,
+                        'source' => $archive->source,
+                        'uploaded_by' => $archive->uploader?->name,
+                        'created_at' => $archive->created_at?->toIso8601String(),
+                        'current' => $archive->id === $server->current_world_archive_id,
+                    ])->all(),
+                'storageProblem' => $storageProblem,
+                'running' => $server->activeRun()->exists(),
+                'uploadMaxMb' => (int) config('world_storage.upload_max_mb'),
+                'keep' => (int) config('world_storage.keep'),
+            ],
         ]);
     }
 
@@ -62,7 +91,10 @@ class ServerController extends Controller
         return to_route('admin.servers.index');
     }
 
-    public function destroy(Server $server): RedirectResponse
+    /**
+     * The saved worlds stay on the storage server unless `delete_archives` is ticked (#5288).
+     */
+    public function destroy(Request $request, Server $server, Archives $archives): RedirectResponse
     {
         if ($server->activeRun()->exists()) {
             Inertia::flash('toast', ['type' => 'error', 'message' => "Stop {$server->name} before deleting it."]);
@@ -71,9 +103,32 @@ class ServerController extends Controller
         }
 
         $name = $server->name;
+        $message = "Deleted {$name}.";
+
+        if ($request->boolean('delete_archives') && $server->worldArchives()->exists()) {
+            try {
+                $failed = $archives->deleteAll($server);
+            } catch (StorageUnavailable $e) {
+                Inertia::flash('toast', ['type' => 'error', 'message' => "Nothing was deleted: the saved worlds couldn't be removed. {$e->getMessage()}"]);
+
+                return back();
+            }
+
+            if ($failed !== []) {
+                Inertia::flash('toast', ['type' => 'error', 'message' => 'Nothing was deleted: '.count($failed).' saved world(s) couldn\'t be removed from storage. Try again, or delete the server without them.']);
+
+                return back();
+            }
+
+            $message = "Deleted {$name} and its saved worlds.";
+        } elseif ($server->worldArchives()->exists()) {
+            $message = "Deleted {$name}. Its saved worlds are still in storage, under {$server->slug}/.";
+        }
+
+        Log::info('Server deleted', ['server' => $server->slug, 'archives_deleted' => $request->boolean('delete_archives'), 'by' => $request->user()?->id]);
         $server->delete();
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Deleted {$name}."]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
 
         return to_route('admin.servers.index');
     }
