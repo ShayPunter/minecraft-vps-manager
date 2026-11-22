@@ -58,6 +58,17 @@ output. Run with the real binary:
 - `/version` (`App\Support\DeployedVersion`, copied from MDG): outside the web middleware,
   no cookies.
 - Welcome page takes a `servers` prop (public servers); it's `[]` until the servers card.
+- `App\Cloud` (#5281): `CloudProvider` interface (create/find/delete server, managed
+  servers, server types, locations), `HetznerCloud` (Laravel `Http::`, token and SSH key path
+  from `config('services.hetzner.*')`), `FakeCloudProvider` (state in the cache, so it survives
+  `artisan serve`'s separate processes in E2E; `setStatus()` moves a fake VPS on). The binding
+  in `AppServiceProvider` returns the fake in the `testing` and `e2e` environments whatever
+  `HETZNER_FAKE` says, and `Tests\TestCase` calls `Http::preventStrayRequests()`.
+  Every VPS gets `managed-by=minecraft-vps-manager` + `mvm-server-id=<id>`; `deleteServer()`
+  refuses anything without the first. Login is SSH-key only: the ed25519 public key at
+  `HETZNER_SSH_PUBLIC_KEY` is registered with Hetzner on first use (looked up by MD5
+  fingerprint first). Volumes aren't in the interface: worlds go over SFTP (#5288).
+  `tests/fixtures/ssh/id_ed25519.pub` is a throwaway public key (no private half exists).
 
 ## Rules for this app
 

@@ -28,6 +28,18 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    // Hetzner Cloud: where the Minecraft VPSes run (App\Cloud). Tests and E2E always use
+    // the fake, whatever this says (AppServiceProvider).
+    'hetzner' => [
+        'token' => env('HETZNER_TOKEN'),
+        'base_url' => 'https://api.hetzner.cloud/v1',
+        // The ed25519 public key registered with Hetzner; the app logs in to its VPSes with
+        // the private half next to it. Make it with: ssh-keygen -t ed25519 -N "" -f <path without .pub>
+        // `?:`, not env()'s default: an empty `HETZNER_SSH_PUBLIC_KEY=` line would skip it.
+        'ssh_public_key_path' => env('HETZNER_SSH_PUBLIC_KEY') ?: storage_path('app/private/ssh/id_ed25519.pub'),
+        'fake' => (bool) env('HETZNER_FAKE', false),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
