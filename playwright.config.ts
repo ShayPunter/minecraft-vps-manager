@@ -22,6 +22,8 @@ const appEnv = {
     MAIL_MAILER: 'array',
     LOG_CHANNEL: 'single',
     INERTIA_SSR_ENABLED: 'false',
+    // Check starting servers on every poll: the fake VPS boots on its first check.
+    MVM_CHECK_INTERVAL: '0',
 };
 
 export default defineConfig({
