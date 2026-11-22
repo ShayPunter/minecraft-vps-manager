@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\QueueHeartbeat;
 use App\Servers\Watchdog;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -17,6 +18,7 @@ class SweepServers extends Command
     public function handle(Watchdog $watchdog): int
     {
         $watchdog->sweep();
+        QueueHeartbeat::dispatch();
 
         return self::SUCCESS;
     }

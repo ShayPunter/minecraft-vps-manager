@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Servers\Watchdog;
+use App\Support\Heartbeat;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -17,6 +18,7 @@ class WatchServers extends Command
     public function handle(Watchdog $watchdog): int
     {
         $watchdog->watch();
+        Heartbeat::beat(Heartbeat::SCHEDULER);
 
         return self::SUCCESS;
     }
