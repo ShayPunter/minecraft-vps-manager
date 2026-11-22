@@ -28,6 +28,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int $java_version
  * @property Software $software custom, or what the first start without a saved world installs (#5351)
  * @property string|null $minecraft_version the version it installs (null for custom)
+ * @property array<string, string>|null $properties server.properties values an admin changed (#5377)
+ * @property list<array{uuid: string, name: string}>|null $whitelist written as whitelist.json when set
+ * @property list<array{uuid: string, name: string, level: int}>|null $ops written as ops.json when set
+ * @property string|null $run_sh written over the pack's run.sh when set
+ * @property string|null $user_jvm_args written over the pack's user_jvm_args.txt when set
  * @property int $idle_minutes minutes with nobody on before the watchdog stops it
  * @property int|null $current_world_archive_id the archive the next start downloads (#5288)
  * @property string|null $subdomain its name inside the DNS zone, e.g. "atm9" → atm9.<domain> (#5338)
@@ -40,7 +45,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property-read ServerRun|null $latestRun
  * @property-read WorldArchive|null $currentWorldArchive
  */
-#[Fillable(['name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'software', 'minecraft_version'])]
+#[Fillable(['name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'software', 'minecraft_version', 'properties', 'whitelist', 'ops', 'run_sh', 'user_jvm_args'])]
 class Server extends Model
 {
     /** @use HasFactory<ServerFactory> */
@@ -120,6 +125,9 @@ class Server extends Model
         return [
             'is_public' => 'boolean',
             'software' => Software::class,
+            'properties' => 'array',
+            'whitelist' => 'array',
+            'ops' => 'array',
             'eula_accepted_at' => 'datetime',
             'java_version' => 'integer',
             'idle_minutes' => 'integer',

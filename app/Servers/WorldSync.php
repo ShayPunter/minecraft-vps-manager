@@ -56,7 +56,9 @@ class WorldSync
             throw new InvalidArgumentException('A server with a saved world is never installed over (#5351).');
         }
 
-        $files = [self::DIR.'/prepare.sh' => [self::prepareScript($server, $archive, $storage, $install), 0700]];
+        // The admin's server.properties / whitelist / ops / run.sh changes (#5377).
+        $files = [self::DIR.'/prepare.sh' => [self::prepareScript($server, $archive, $storage, $install), 0700]]
+            + ServerFiles::overrideFiles($server);
 
         if ($archive !== null) {
             if ($storage === null) {
@@ -123,14 +125,14 @@ class WorldSync
     /**
      * Read what save.sh printed: the archive's size and SHA-256, or that the folder was empty.
      *
-     * @return array{size: int, sha256: string}|null null when there was nothing to save
+     * @return array{size: int, sha256: string, files: array<string, string>}|null null when there was nothing to save
      *
      * @throws InvalidArgumentException when the output has neither
      */
     public static function parseSaveOutput(string $output): ?array
     {
         if (preg_match('/^size=(\d+) sha256=([0-9a-f]{64})$/m', $output, $m) === 1) {
-            return ['size' => (int) $m[1], 'sha256' => $m[2]];
+            return ['size' => (int) $m[1], 'sha256' => $m[2], 'files' => ServerFiles::fromSaveOutput($output)];
         }
 
         if (preg_match('/^empty=1$/m', $output) === 1) {
@@ -249,6 +251,7 @@ class WorldSync
 
             SH
             .$fetch
+            .ServerFiles::applyScript()
             .<<<'SH'
             # A start command like ./run.sh: zips made on Windows lose the executable bit.
             find "$DIR" -maxdepth 1 -type f -name '*.sh' -exec chmod 0755 {} +
@@ -293,6 +296,12 @@ class WorldSync
             fi
             finish "$P.part" "$P"
             rm -f "$M/work/save.zip"
+            # The files admins edit in the app, as saved (#5377, ServerFiles).
+            for name in server.properties run.sh user_jvm_args.txt whitelist.json ops.json; do
+                if [ -f "$DIR/$name" ] && [ ! -L "$DIR/$name" ] && [ "$(stat -c %s "$DIR/$name")" -le 65536 ]; then
+                    echo "mvmfile $name $(base64 -w 0 "$DIR/$name")"
+                fi
+            done
             echo "size=$size sha256=$sum"
 
             SH;
@@ -311,7 +320,7 @@ class WorldSync
             exec 9>"$M/lock"
             if ! flock -n 9; then echo "Another world setup or save is still running on this VPS."; exit 75; fi
             # The storage login is only here while this script runs.
-            cleanup() { rm -rf "$M/work" "$M/key" "$M/password" "$M/askpass" "$M/curl.conf" "$M/known_hosts" "$M/get.conf" "$M/parts" "$M/complete.conf"; }
+            cleanup() { rm -rf "$M/work" "$M/key" "$M/password" "$M/askpass" "$M/curl.conf" "$M/known_hosts" "$M/get.conf" "$M/parts" "$M/complete.conf" "$M/files"; }
             trap cleanup EXIT
 
             SH;
@@ -502,6 +511,12 @@ class WorldSync
                 exit 31
             fi
             rm -f "$M/work/save.zip"
+            # The files admins edit in the app, as saved (#5377, ServerFiles).
+            for name in server.properties run.sh user_jvm_args.txt whitelist.json ops.json; do
+                if [ -f "$DIR/$name" ] && [ ! -L "$DIR/$name" ] && [ "$(stat -c %s "$DIR/$name")" -le 65536 ]; then
+                    echo "mvmfile $name $(base64 -w 0 "$DIR/$name")"
+                fi
+            done
             echo "size=$size sha256=$sum"
 
             SH;

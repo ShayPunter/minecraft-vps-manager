@@ -74,6 +74,28 @@ export type ServerDefinition = {
     minecraft_version: string | null;
 };
 
+/** App\Servers\ServerConfigForm::props() (#5377). */
+export type ServerConfig = {
+    /** Each common setting as the next start will have it (the change, else the world's). */
+    values: Record<string, string>;
+    /** The world's own value of each common setting ('' when it has none). */
+    world: Record<string, string>;
+    /** The admin's other key=value changes, one per line. */
+    extra: string;
+    /** The world's other settings, shown read-only. */
+    world_other: string[];
+    whitelist: string;
+    ops: string;
+    run_sh: string;
+    run_sh_pack: string | null;
+    run_sh_changed: boolean;
+    user_jvm_args: string;
+    user_jvm_args_pack: string | null;
+    user_jvm_args_changed: boolean;
+    has_world_files: boolean;
+    has_world: boolean;
+};
+
 export type SoftwareValue = 'custom' | 'vanilla' | 'paper' | 'fabric';
 
 /** What App\Http\Controllers\Admin\ServerController::softwareOptions() sends (#5351). */

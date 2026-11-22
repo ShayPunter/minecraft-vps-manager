@@ -12,6 +12,7 @@ use App\Minecraft\VersionSourceException;
 use App\Models\Server;
 use App\Models\WorldArchive;
 use App\Servers\ServerCatalog;
+use App\Servers\ServerConfigForm;
 use App\Servers\ServerLauncher;
 use App\Servers\ServerPresenter;
 use App\WorldStorage\Archives;
@@ -43,6 +44,7 @@ class ServerController extends Controller
             'javaVersions' => config('minecraft.java_versions'),
             'dnsDomain' => app(Dns::class)->saved()?->domain,
             'software' => $this->softwareOptions(),
+            'config' => ServerConfigForm::props(null),
         ]);
     }
 
@@ -76,6 +78,7 @@ class ServerController extends Controller
             'catalog' => $catalog->formOptions(),
             'javaVersions' => config('minecraft.java_versions'),
             'software' => $this->softwareOptions(),
+            'config' => ServerConfigForm::props($server),
             'world' => [
                 'archives' => $server->worldArchives()->with('uploader:id,name')->orderByDesc('id')->get()
                     ->map(fn (WorldArchive $archive): array => [

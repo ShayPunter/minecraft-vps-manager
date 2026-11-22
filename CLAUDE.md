@@ -306,6 +306,33 @@ output. Run with the real binary:
   `TcpMinecraftProbe` from a `php:8.4-cli` container on the same network; a wrong SHA-1 was
   refused (exit 24, no jar left). E2E: `software.spec` (`software-admin@example.com`); older
   specs that set a Java version pick Software → "My own start command" first.
+- Server config (#5377, `App\Servers\ServerFiles` + `ServerConfigForm`): server.properties,
+  whitelist.json, ops.json, run.sh and user_jvm_args.txt. `world_archives.files` (json) holds
+  the world's own copies: `ServerFiles::fromZip()` on upload (top level or inside a single
+  folder, ≤ 64 KB, UTF-8 only), and save.sh prints `mvmfile <name> <base64>` lines before
+  `size=…` (both the SFTP/FTP and S3 save scripts) that `parseSaveOutput()` returns as `files`;
+  archives from before #5377 have `null` (the form says so). The server keeps **only what
+  differs from the world**: `servers.properties` (json key => value; the 12 `COMMON` keys
+  have form fields, others go in the "Other settings" box as key=value), `whitelist` /
+  `ops` (json, UUIDs from Mojang), `run_sh` / `user_jvm_args` (text). Equal to the world's
+  value, an empty field, or a file put back with "Use the pack's file" → not stored, so it
+  keeps following the world. Laravel's TrimStrings strips the trailing newline from the file
+  textareas: `ServerConfigForm::file()` compares rtrimmed and adds the newline back. Turning
+  the whitelist on with nobody on it is refused. `PlayerLookup`: `MojangPlayers` (public bulk
+  endpoint `api.minecraftservices.com/minecraft/profile/lookup/bulk/byname`, 10 names a call,
+  unknown names left out, found ones cached a day), `FakePlayers` in testing/e2e (every valid
+  name exists except `nobody*`; `mojang_down` fails the lookup). Names are looked up only when
+  the list changed. On start, `ServerFiles::overrideFiles()` goes over SFTP into
+  `/root/.mvm/files` (never in the script) and prepare.sh's `applyScript()` (after the world /
+  install, before the chmod + EULA step) merges server.properties with awk (a changed key
+  replaced in place, new keys appended, comments and the rest kept) and copies the others
+  over the world's; the cleanup trap deletes `$M/files`. Values are written Java-properties
+  style (`\` doubled). The form fields are `v-model` on local state (`ServerConfigFields.vue`):
+  with `:value` on a textarea, Vue rewrites it on every re-render and typed text was lost.
+  Checked for real (Nov 23) in `ubuntu:24.04` with Vanilla 26.3: Minecraft started with the
+  MOTD, whitelist (real Mojang UUIDs), ops level and seed from the app and kept them; the awk
+  merge on a file with comments and `key = value` spacing; save.sh's report read back.
+  E2E: `server-config.spec` (`config-admin@example.com`); the zip helper is `tests/e2e/zip.ts`.
 - DNS names (#5338, `App\Dns`): Admin → DNS (`DnsController`, `DnsSetting`, one row: domain,
   Cloudflare zone id, `api_token` encrypted + `$hidden`). Only `/zones/{id}/dns_records` is
   called, so an "Edit zone DNS" token for one zone is enough (no Zone Read for `/zones`).

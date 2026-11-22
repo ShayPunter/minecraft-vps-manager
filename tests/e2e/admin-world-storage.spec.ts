@@ -1,5 +1,5 @@
-import { crc32 } from 'node:zlib';
 import { expect, logIn, test } from './fixtures';
+import { zip } from './zip';
 
 // World storage (#5288). APP_ENV=e2e: the "storage server" is a local folder and the
 // connection test never opens a connection; the host "unreachable.invalid" fails it.
@@ -7,51 +7,6 @@ import { expect, logIn, test } from './fixtures';
 // Signs in as its own admin (Fortify's 5 logins a minute per email).
 // Named to run first: it checks the "Not set up" state, and servers.spec needs storage set
 // (it sets it up itself when run alone).
-
-/** A store-only zip, built by hand so the spec needs no zip package. */
-function zip(entries: Record<string, string>): Buffer {
-    const locals: Buffer[] = [];
-    const centrals: Buffer[] = [];
-    let offset = 0;
-
-    for (const [name, text] of Object.entries(entries)) {
-        const nameBytes = Buffer.from(name, 'utf8');
-        const data = Buffer.from(text, 'utf8');
-        const crc = crc32(data);
-
-        const local = Buffer.alloc(30);
-        local.writeUInt32LE(0x04034b50, 0);
-        local.writeUInt16LE(20, 4);
-        local.writeUInt32LE(crc, 14);
-        local.writeUInt32LE(data.length, 18);
-        local.writeUInt32LE(data.length, 22);
-        local.writeUInt16LE(nameBytes.length, 26);
-        locals.push(local, nameBytes, data);
-
-        const central = Buffer.alloc(46);
-        central.writeUInt32LE(0x02014b50, 0);
-        central.writeUInt16LE(20, 4);
-        central.writeUInt16LE(20, 6);
-        central.writeUInt32LE(crc, 16);
-        central.writeUInt32LE(data.length, 20);
-        central.writeUInt32LE(data.length, 24);
-        central.writeUInt16LE(nameBytes.length, 28);
-        central.writeUInt32LE(offset, 42);
-        centrals.push(central, nameBytes);
-
-        offset += local.length + nameBytes.length + data.length;
-    }
-
-    const directory = Buffer.concat(centrals);
-    const end = Buffer.alloc(22);
-    end.writeUInt32LE(0x06054b50, 0);
-    end.writeUInt16LE(Object.keys(entries).length, 8);
-    end.writeUInt16LE(Object.keys(entries).length, 10);
-    end.writeUInt32LE(directory.length, 12);
-    end.writeUInt32LE(offset, 16);
-
-    return Buffer.concat([...locals, directory, end]);
-}
 
 test('an admin sets up world storage, uploads a world and downloads it again', async ({
     page,

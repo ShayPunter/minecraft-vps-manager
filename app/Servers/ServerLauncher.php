@@ -673,7 +673,7 @@ class ServerLauncher
             return false;
         }
 
-        $archive = $this->archives->record($server, $path, $saved['size'], $saved['sha256'], 'save', $run);
+        $archive = $this->archives->record($server, $path, $saved['size'], $saved['sha256'], 'save', $run, files: $saved['files']);
         $run->saved_world_archive_id = $archive->id;
         $run->save();
 

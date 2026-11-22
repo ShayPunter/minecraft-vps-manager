@@ -6,6 +6,7 @@ use App\Models\Server;
 use App\Models\ServerRun;
 use App\Models\User;
 use App\Models\WorldArchive;
+use App\Servers\ServerFiles;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -68,7 +69,7 @@ class Archives
             throw new RuntimeException("World storage has {$stored} bytes of the {$size} uploaded: nothing was changed.");
         }
 
-        $archive = $this->record($server, $path, $size, $sha256, 'upload', null, $by);
+        $archive = $this->record($server, $path, $size, $sha256, 'upload', null, $by, ServerFiles::fromZip($local));
 
         Log::info('World archive uploaded', ['server' => $server->slug, 'archive' => $archive->id, 'size' => $size, 'by' => $by->id]);
 
@@ -78,15 +79,19 @@ class Archives
     /**
      * Make a stored file the server's current archive, then drop the oldest past the limit.
      */
-    public function record(Server $server, string $path, int $size, string $sha256, string $source, ?ServerRun $run = null, ?User $by = null): WorldArchive
+    /**
+     * @param  array<string, string>  $files  the world's own server.properties etc. (#5377, ServerFiles)
+     */
+    public function record(Server $server, string $path, int $size, string $sha256, string $source, ?ServerRun $run = null, ?User $by = null, array $files = []): WorldArchive
     {
-        $archive = DB::transaction(function () use ($server, $path, $size, $sha256, $source, $run, $by): WorldArchive {
+        $archive = DB::transaction(function () use ($server, $path, $size, $sha256, $source, $run, $by, $files): WorldArchive {
             $archive = new WorldArchive;
             $archive->server_id = $server->id;
             $archive->path = $path;
             $archive->size = $size;
             $archive->sha256 = $sha256;
             $archive->source = $source;
+            $archive->files = $files;
             $archive->server_run_id = $run?->id;
             $archive->uploaded_by = $by?->id;
             $archive->save();

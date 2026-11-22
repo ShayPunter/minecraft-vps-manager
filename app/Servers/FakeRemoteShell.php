@@ -20,6 +20,9 @@ class FakeRemoteShell implements RemoteShell
 {
     private const KEY = 'fake-shell';
 
+    /** The server.properties a fake save holds and reports. */
+    public const SAVED_PROPERTIES = "motd=fake\ndifficulty=easy\nmax-players=20\nlevel-seed=42\n";
+
     public function __construct(private readonly Repository $cache) {}
 
     public function run(string $host, string $command, int $timeoutSeconds, ?string $privateKey = null): ShellResult
@@ -148,7 +151,9 @@ class FakeRemoteShell implements RemoteShell
         $bytes = $this->fakeWorldZip();
         app(WorldStorage::class)->disk()->put($path, $bytes);
 
-        return new ShellResult(0, 'size='.strlen($bytes).' sha256='.hash('sha256', $bytes)."\n");
+        // Like save.sh, it reports the world's server.properties as saved (#5377).
+        return new ShellResult(0, 'mvmfile server.properties '.base64_encode(self::SAVED_PROPERTIES)."\n"
+            .'size='.strlen($bytes).' sha256='.hash('sha256', $bytes)."\n");
     }
 
     private function fakeWorldZip(): string
@@ -157,7 +162,7 @@ class FakeRemoteShell implements RemoteShell
         $zip = new ZipArchive;
         $zip->open($file, ZipArchive::CREATE | ZipArchive::OVERWRITE);
         $zip->addFromString('world/level.dat', 'saved by the fake VPS at '.now()->toIso8601String());
-        $zip->addFromString('server.properties', "motd=fake\n");
+        $zip->addFromString('server.properties', self::SAVED_PROPERTIES);
         $zip->close();
         $bytes = (string) file_get_contents($file);
         @unlink($file);
