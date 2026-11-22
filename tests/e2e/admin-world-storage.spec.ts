@@ -3,7 +3,10 @@ import { expect, logIn, test } from './fixtures';
 
 // World storage (#5288). APP_ENV=e2e: the "storage server" is a local folder and the
 // connection test never opens a connection; the host "unreachable.invalid" fails it.
+// The fake VPS's save.sh writes a small zip there (FakeRemoteShell).
 // Signs in as its own admin (Fortify's 5 logins a minute per email).
+// Named to run first: it checks the "Not set up" state, and servers.spec needs storage set
+// (it sets it up itself when run alone).
 
 /** A store-only zip, built by hand so the spec needs no zip package. */
 function zip(entries: Record<string, string>): Buffer {
@@ -165,6 +168,37 @@ test('an admin sets up world storage, uploads a world and downloads it again', a
     expect(download.status()).toBe(200);
     expect(download.headers()['content-disposition']).toContain('-upload.zip');
     expect(Buffer.compare(await download.body(), world)).toBe(0);
+
+    // A start puts that world on the VPS; the stop saves a new archive before the VPS goes.
+    await page.goto('/dashboard');
+    const card = page.locator('[data-test="server-storage-test"]');
+    await card.getByRole('button', { name: 'Start Storage Test' }).click();
+    await expect(card.locator('[data-test="server-status"]')).toHaveText(
+        'Online',
+        { timeout: 20_000 },
+    );
+    await card.getByRole('button', { name: 'Stop Storage Test' }).click();
+    await expect(
+        page.getByText(
+            'Stopped Storage Test. The world is saved and the VPS is deleted.',
+        ),
+    ).toBeVisible();
+
+    await page.goto('/admin/servers');
+    await page.getByRole('link', { name: 'Edit Storage Test' }).click();
+    await expect(archives).toHaveCount(2);
+    await expect(archives.first()).toContainText('saved on stop');
+    await expect(archives.first()).toContainText('current');
+    await expect(archives.nth(1)).toContainText('uploaded by Sam Storage');
+    await expect(archives.nth(1)).not.toContainText('current');
+    const savedHref = await archives
+        .first()
+        .getByRole('link', { name: /^Download / })
+        .getAttribute('href');
+    const saved = await page.request.get(savedHref!);
+    expect(saved.status()).toBe(200);
+    expect(saved.headers()['content-disposition']).toContain('-save.zip');
+    expect((await saved.body()).subarray(0, 2).toString()).toBe('PK');
 
     // Delete the server and its worlds.
     await page.goto('/admin/servers');

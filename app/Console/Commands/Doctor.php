@@ -9,6 +9,8 @@ use App\Jobs\QueueHeartbeat;
 use App\Models\User;
 use App\Servers\SshKeyPair;
 use App\Support\Heartbeat;
+use App\WorldStorage\StorageUnavailable;
+use App\WorldStorage\WorldStorage;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -16,18 +18,18 @@ use Throwable;
 
 /**
  * Checks a Forge install is ready to start real servers (#5285): Hetzner token (one
- * read-only call), SSH key making, the queue worker, the scheduler, an admin and where
- * alerts go. Prints what's missing and how to fix it; never prints a secret. Exit 1 when
+ * read-only call), SSH key making, the queue worker, the scheduler, an admin, world storage
+ * (a real connection test, #5288) and where alerts go. Prints what's missing and how to fix it; never prints a secret. Exit 1 when
  * anything fails, so it can gate a deploy too.
  */
 #[Signature('app:doctor {--wait=15 : Seconds to wait for the queue worker to run a test job}')]
-#[Description('Check the Hetzner token, SSH keys, queue worker, scheduler and alerts')]
+#[Description('Check the Hetzner token, SSH keys, queue worker, scheduler, world storage and alerts')]
 class Doctor extends Command
 {
     /** @var list<array{string, string, string}> */
     private array $rows = [];
 
-    public function handle(CloudProvider $cloud): int
+    public function handle(CloudProvider $cloud, WorldStorage $storage): int
     {
         $this->checkAppUrl();
         $this->checkHetzner($cloud);
@@ -35,6 +37,7 @@ class Doctor extends Command
         $this->checkQueue();
         $this->checkScheduler();
         $this->checkAdmins();
+        $this->checkWorldStorage($storage);
         $this->checkAlerts();
 
         $this->table(['', 'Check', 'Details'], $this->rows);
@@ -148,6 +151,29 @@ class Doctor extends Command
         $admins > 0
             ? $this->row('OK', 'Admin', "{$admins} admin account(s).")
             : $this->row('FAIL', 'Admin', 'No admin yet. Run: php artisan app:create-admin --name="…" --email=…');
+    }
+
+    /**
+     * Starts are refused without world storage (#5288). A real connection test, the same one
+     * Admin → World storage runs (writes and deletes a small file), against the pinned host key.
+     */
+    private function checkWorldStorage(WorldStorage $storage): void
+    {
+        try {
+            $settings = $storage->settings();
+        } catch (StorageUnavailable $e) {
+            $this->row('FAIL', 'World storage', $e->getMessage().' Servers can\'t start until it works: set it up in Admin → World storage.');
+
+            return;
+        }
+
+        $where = strtoupper($settings->driver)." {$settings->username}@{$settings->host}:{$settings->port}, base folder {$settings->root}"
+            .($storage->source() === 'env' ? ' (from the env)' : '');
+        $test = $storage->test($settings, $settings->hostKey, false);
+
+        $test->ok
+            ? $this->row('OK', 'World storage', "{$where}: connected and writable.")
+            : $this->row('FAIL', 'World storage', "{$where}: {$test->message}");
     }
 
     private function checkAlerts(): void

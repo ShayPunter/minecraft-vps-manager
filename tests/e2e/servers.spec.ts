@@ -37,6 +37,24 @@ async function createServer(
     ).toContainText('Stopped');
 }
 
+/**
+ * Starts need world storage (#5288). admin-world-storage.spec runs first and saves it; when
+ * this spec runs alone, set it up here.
+ */
+async function ensureWorldStorage(page: Page): Promise<void> {
+    await page.goto('/admin/world-storage');
+    const status = page.locator('[data-test="storage-status"]');
+    await expect(status).toBeVisible();
+    if (!(await status.textContent())?.includes('Not set up')) {
+        return;
+    }
+    await page.getByLabel('Host', { exact: true }).fill('storage.example.com');
+    await page.getByLabel('User').fill('minecraft');
+    await page.getByLabel('Password', { exact: true }).fill('storage-pass');
+    await page.locator('[data-test="save-storage"]').click();
+    await expect(status).toContainText('Saved here');
+}
+
 async function stopServer(page: Page, name: string, slug: string) {
     await page.goto('/admin/servers');
     const row = page.locator(`[data-test="server-row-${slug}"]`);
@@ -55,6 +73,7 @@ test('an admin adds a server, a player starts it and sees it come online', async
     browser,
 }) => {
     await logIn(page, 'admin@example.com');
+    await ensureWorldStorage(page);
     await page.getByRole('link', { name: 'Servers', exact: true }).click();
     await expect(page).toHaveURL(/\/admin\/servers$/);
     await createServer(page, 'Friends Modpack', 'friends-modpack', false);
@@ -121,6 +140,7 @@ test('a guest starts a public server from the home page', async ({
     browser,
 }) => {
     await logIn(page, 'admin@example.com');
+    await ensureWorldStorage(page);
     await createServer(page, 'Open World', 'open-world', true);
 
     const guestContext = await browser.newContext();
@@ -151,6 +171,7 @@ test('the player who started a server stops it from the dashboard', async ({
     browser,
 }) => {
     await logIn(page, 'admin@example.com');
+    await ensureWorldStorage(page);
     await createServer(page, 'Weekend Survival', 'weekend-survival', false);
 
     // The idle setting is on the form, with the default.

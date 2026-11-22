@@ -18,11 +18,19 @@ use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
+use Tests\Concerns\UsesFakeWorldStorage;
 use Tests\TestCase;
 
 class ServerStartTest extends TestCase
 {
     use RefreshDatabase;
+    use UsesFakeWorldStorage;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->useFakeWorldStorage();
+    }
 
     private function fake(): FakeCloudProvider
     {

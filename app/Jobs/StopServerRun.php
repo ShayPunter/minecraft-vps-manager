@@ -20,7 +20,7 @@ class StopServerRun implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 600;
+    public int $timeout = 2700;
 
     public function __construct(
         public readonly int $runId,

@@ -36,8 +36,9 @@ class CloudInitTest extends TestCase
     {
         $config = $this->decode(CloudInit::for($this->server()));
 
-        $this->assertSame(['openjdk-21-jre-headless'], $config['packages']);
-        $this->assertSame(['systemctl', 'enable', '--now', 'minecraft-vanilla.service'], end($config['runcmd']));
+        $this->assertSame(['openjdk-21-jre-headless', 'zip', 'unzip'], $config['packages']);
+        $this->assertSame(['systemctl', 'daemon-reload'], end($config['runcmd']));
+        $this->assertNotContains(['systemctl', 'enable', '--now', 'minecraft-vanilla.service'], $config['runcmd']);
         $this->assertContains(['mkdir', '-p', '/opt/minecraft/vanilla'], $config['runcmd']);
 
         $files = collect($config['write_files'])->keyBy('path');

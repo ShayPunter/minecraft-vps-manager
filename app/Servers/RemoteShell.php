@@ -15,4 +15,14 @@ interface RemoteShell
      * @throws RemoteShellException when it can't connect or log in
      */
     public function run(string $host, string $command, int $timeoutSeconds, ?string $privateKey = null): ShellResult;
+
+    /**
+     * Write files on the VPS over SFTP (#5288), so their contents (the world storage login)
+     * never appear in a command line. Parent folders are made with mode 0700.
+     *
+     * @param  array<string, array{0: string, 1: int}>  $files  absolute path => [contents, mode]
+     *
+     * @throws RemoteShellException
+     */
+    public function putFiles(string $host, array $files, ?string $privateKey = null): void;
 }

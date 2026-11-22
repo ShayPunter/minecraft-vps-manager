@@ -11,11 +11,19 @@ use App\Servers\ServerCatalog;
 use App\Servers\ServerLauncher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
+use Tests\Concerns\UsesFakeWorldStorage;
 use Tests\TestCase;
 
 class AdminServerTest extends TestCase
 {
     use RefreshDatabase;
+    use UsesFakeWorldStorage;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->useFakeWorldStorage();
+    }
 
     /**
      * @return array<string, mixed>

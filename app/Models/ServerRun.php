@@ -29,6 +29,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $long_run_alerted_at
  * @property string|null $ssh_private_key this run's OpenSSH private key, encrypted with APP_KEY; wiped once the VPS is gone (#5324)
  * @property int|null $provider_ssh_key_id its public half at the provider
+ * @property CarbonImmutable|null $prepare_queued_at PrepareServerRun was queued (#5288); null again to retry
+ * @property CarbonImmutable|null $prepared_at the world is in place and Minecraft was started
+ * @property int|null $world_archive_id the archive this run started from (null: a new world)
+ * @property int|null $saved_world_archive_id the archive this run's stop saved
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read Server $server
@@ -83,6 +87,10 @@ class ServerRun extends Model
             'long_run_alerted_at' => 'datetime',
             'ssh_private_key' => 'encrypted',
             'provider_ssh_key_id' => 'integer',
+            'prepare_queued_at' => 'datetime',
+            'prepared_at' => 'datetime',
+            'world_archive_id' => 'integer',
+            'saved_world_archive_id' => 'integer',
         ];
     }
 }
