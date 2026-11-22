@@ -3,6 +3,7 @@ import { Form, Head, Link, usePoll } from '@inertiajs/vue3';
 import ServerController from '@/actions/App/Http/Controllers/Admin/ServerController';
 import ServerLogController from '@/actions/App/Http/Controllers/Admin/ServerLogController';
 import Heading from '@/components/Heading.vue';
+import IdleStopNote from '@/components/IdleStopNote.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -98,6 +99,13 @@ usePoll(5000, { only: ['servers'] });
                                 class="ml-2 font-mono text-xs"
                                 >{{ server.address }}</span
                             >
+                            <p
+                                v-if="server.status === 'online'"
+                                class="mt-1 text-xs text-muted-foreground"
+                                data-test="server-idle"
+                            >
+                                <IdleStopNote :server="server" />
+                            </p>
                             <p
                                 v-if="server.error"
                                 class="mt-1 max-w-md text-xs text-destructive"

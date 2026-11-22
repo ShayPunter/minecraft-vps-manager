@@ -82,7 +82,9 @@ output. Run with the real binary:
   runs; give up on runs not online `MVM_BOOT_TIMEOUT_MINUTES` (20) after Start, VPS deleted,
   `failed`; ping online runs and stop one after the server's `idle_minutes` (default 15)
   with nobody on, counted from `online_at` or the last ping with players, so boot time never
-  counts). `servers:sweep` every 10 minutes (stuck `stopping` → `stop_failed`; retry
+  counts; `ServerRun::idleStopsAt()`, which `ServerPresenter` also sends as `stops_at` +
+  `stops_in_seconds` so the pages count down to the same minute with `useCountdown`, #5378).
+  `servers:sweep` every 10 minutes (stuck `stopping` → `stop_failed`; retry
   `stop_failed`; delete managed VPSes no active run knows, matching the run id at the end of
   the VPS name so a run still provisioning isn't hit; one alert per run older than
   `MVM_MAX_RUN_HOURS` (8)). Players come from Minecraft's server-list ping

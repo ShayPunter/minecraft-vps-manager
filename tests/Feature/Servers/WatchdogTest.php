@@ -17,6 +17,7 @@ use App\Servers\MinecraftProbe;
 use App\Servers\RemoteShell;
 use App\Servers\RunLog;
 use App\Servers\ServerLauncher;
+use App\Servers\ServerPresenter;
 use App\Servers\WorldSync;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Notifications\AnonymousNotifiable;
@@ -421,6 +422,40 @@ class WatchdogTest extends TestCase
         $this->assertSame(RunStatus::Failed, $run->status);
         $this->assertNull($run->ssh_private_key);
         $this->assertNull($run->provider_ssh_key_id);
+    }
+
+    public function test_the_pages_count_down_to_the_time_the_watchdog_stops_it(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $run = $this->online(['idle_minutes' => 15]);
+        $onlineAt = $run->online_at;
+        $this->assertNotNull($onlineAt);
+
+        $this->travel(4)->minutes();
+        $this->watch();
+        $this->actingAs($admin)->get('/dashboard')->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('servers.0.players_online', 0)
+            ->where('servers.0.stops_at', $onlineAt->addMinutes(15)->toIso8601String())
+            ->where('servers.0.stops_in_seconds', 11 * 60));
+
+        // Players on: the countdown starts again from the last ping that saw them.
+        $this->probe()->setPlayers(2);
+        $this->travel(10)->minutes();
+        $this->watch();
+        $this->probe()->setPlayers(0);
+        $this->travel(1)->minutes();
+        $this->watch();
+        $this->actingAs($admin)->get('/admin/servers')->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('servers.0.stops_in_seconds', 14 * 60));
+
+        // Due: 0, never negative, until the watchdog's next minute stops it.
+        $this->travel(14)->minutes();
+        $this->assertSame(0, ServerPresenter::one(Server::query()->sole()->load('activeRun', 'latestRun'), $admin)['stops_in_seconds']);
+        $this->watch();
+        $this->assertSame(RunStatus::Stopped, $run->refresh()->status);
+        $this->actingAs($admin)->get('/dashboard')->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('servers.0.stops_at', null)
+            ->where('servers.0.stops_in_seconds', null));
     }
 
     public function test_the_starter_and_admins_can_stop_others_cant(): void

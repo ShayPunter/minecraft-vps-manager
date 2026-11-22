@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form } from '@inertiajs/vue3';
+import IdleStopNote from '@/components/IdleStopNote.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { start, stop } from '@/routes/servers';
@@ -51,18 +52,7 @@ const busy = ['provisioning', 'booting', 'starting', 'stopping'];
             class="text-sm text-muted-foreground"
             data-test="server-players"
         >
-            <template v-if="server.players_online === null"
-                >Checking who's on…</template
-            >
-            <template v-else-if="server.players_online === 0"
-                >Nobody on. It stops after {{ server.idle_minutes }} minutes
-                with nobody on.</template
-            >
-            <template v-else
-                >{{ server.players_online }}
-                {{ server.players_online === 1 ? 'player' : 'players' }}
-                on</template
-            >
+            <IdleStopNote :server="server" />
         </p>
         <p
             v-else-if="busy.includes(server.status)"

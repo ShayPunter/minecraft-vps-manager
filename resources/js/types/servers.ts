@@ -25,6 +25,10 @@ export type ServerSummary = {
     dns_error: string | null;
     players_online: number | null;
     idle_minutes: number;
+    /** When the watchdog stops it if nobody is on (#5378); null unless online. */
+    stops_at: string | null;
+    /** Seconds left at the time of the answer (0 = due); null unless online. */
+    stops_in_seconds: number | null;
     error: string | null;
     error_label: string | null;
     can_start: boolean;

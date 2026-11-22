@@ -78,6 +78,25 @@ class ServerRun extends Model
     }
 
     /**
+     * When the watchdog stops this run if nobody is on (#5378): the server's idle minutes
+     * after it came online (boot time never counts) or after the last ping that counted a
+     * player, whichever is later. Null before it's online. A ping with no answer doesn't
+     * move it, so a server that stopped answering still stops on time.
+     */
+    public function idleStopsAt(int $idleMinutes): ?CarbonImmutable
+    {
+        if ($this->online_at === null) {
+            return null;
+        }
+
+        $since = $this->last_players_at !== null && $this->last_players_at->greaterThan($this->online_at)
+            ? $this->last_players_at
+            : $this->online_at;
+
+        return $since->addMinutes($idleMinutes);
+    }
+
+    /**
      * @param  Builder<ServerRun>  $query
      * @return Builder<ServerRun>
      */

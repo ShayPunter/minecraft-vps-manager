@@ -129,11 +129,10 @@ class Watchdog
                 // Idle time counts from when it came online (boot time never counts) or
                 // from the last minute someone was on, whichever is later. A server that
                 // stops answering counts as idle: it's either crashed or about to be.
-                $since = $run->last_players_at !== null && $run->online_at !== null && $run->last_players_at->greaterThan($run->online_at)
-                    ? $run->last_players_at
-                    : $run->online_at;
+                // The pages count down to the same time (ServerPresenter, #5378).
+                $stopsAt = $run->idleStopsAt($run->server->idle_minutes);
 
-                if ($since !== null && $since->lessThanOrEqualTo(now()->subMinutes($run->server->idle_minutes))) {
+                if ($stopsAt !== null && $stopsAt->lessThanOrEqualTo(now())) {
                     $this->launcher->requestStop($run, 'idle');
                 }
             });
