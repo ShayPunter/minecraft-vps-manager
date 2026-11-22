@@ -22,7 +22,11 @@ was replaced wholesale; it's in git history before #5280 if anyone needs to look
 - Install: `composer install`, `npm ci`.
 - Dev: `composer run dev` (artisan serve + Vite).
 - First admin: `php artisan app:create-admin` (prompts; `--name --email --password` for
-  scripts). An existing email is promoted to admin instead.
+  scripts). An existing email (any case; emails are trimmed and lowercased) is promoted to
+  admin instead. Forge's Commands panel has no terminal, so prompts can't run there: the
+  command then needs `--email` (and `--name` for a new account), and generates and prints a
+  password when `--password` is left out (#5299). Every failure ends "Nothing was changed."
+  with exit 1. `php artisan app:users` lists id, email and role to check the result.
 - Checks, same as CI (`.github/workflows/ci.yml`, one job named **Tests**, the required
   check on `main`): `vendor/bin/pint --test`, `vendor/bin/phpstan analyse --memory-limit=1G`
   (the default 128M crashes a worker), `npm run build` (generates Wayfinder routes in
