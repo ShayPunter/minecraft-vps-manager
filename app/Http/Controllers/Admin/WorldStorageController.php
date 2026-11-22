@@ -16,7 +16,8 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Admin → World storage (#5288): the SFTP or FTP(S) server worlds live on between sessions.
+ * Admin → World storage (#5288): the SFTP, FTP(S) or S3-compatible (#5347) storage worlds
+ * live on between sessions.
  * Saving always tests the connection first and pins the SFTP host key. The password and
  * private key are stored encrypted and never sent back to the browser.
  */
@@ -47,6 +48,10 @@ class WorldStorageController extends Controller
                 'username' => $saved->username ?? $fromEnv->username ?? '',
                 'root' => $saved->root ?? $fromEnv->root ?? 'minecraft-worlds',
                 'ftps' => $saved->ftps ?? $fromEnv->ftps ?? true,
+                'endpoint' => $saved->endpoint ?? $fromEnv->endpoint ?? '',
+                'region' => $saved->region ?? $fromEnv->region ?? '',
+                'bucket' => $saved->bucket ?? $fromEnv->bucket ?? '',
+                'path_style' => $saved->path_style ?? $fromEnv->pathStyle ?? false,
                 'has_password' => $saved !== null ? $saved->getRawOriginal('password') !== null : $fromEnv?->password !== null,
                 'has_private_key' => $saved !== null ? $saved->getRawOriginal('private_key') !== null : $fromEnv?->privateKey !== null,
                 'host_key_fingerprint' => StorageSettings::fingerprint($saved !== null ? $saved->host_key : $fromEnv?->hostKey),
@@ -95,6 +100,10 @@ class WorldStorageController extends Controller
         $row->root = $settings->root;
         $row->ftps = $settings->ftps;
         $row->host_key = $settings->driver === 'sftp' ? $result->hostKey : null;
+        $row->endpoint = $settings->isS3() ? $settings->endpoint : null;
+        $row->region = $settings->isS3() ? $settings->region : null;
+        $row->bucket = $settings->isS3() ? $settings->bucket : null;
+        $row->path_style = $settings->isS3() && $settings->pathStyle;
         $row->updated_by = $request->user()?->id;
         $row->save();
 

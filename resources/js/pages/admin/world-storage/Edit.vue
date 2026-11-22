@@ -11,12 +11,16 @@ import { edit } from '@/routes/admin/world-storage';
 
 type StorageSettings = {
     source: 'database' | 'env' | null;
-    driver: 'sftp' | 'ftp';
+    driver: 'sftp' | 'ftp' | 's3';
     host: string;
     port: number;
     username: string;
     root: string;
     ftps: boolean;
+    endpoint: string;
+    region: string;
+    bucket: string;
+    path_style: boolean;
     has_password: boolean;
     has_private_key: boolean;
     host_key_fingerprint: string | null;
@@ -44,12 +48,18 @@ const form = useForm({
     private_key: '',
     root: props.storage.root,
     ftps: props.storage.ftps,
+    endpoint: props.storage.endpoint,
+    region: props.storage.region,
+    bucket: props.storage.bucket,
+    path_style: props.storage.path_style,
     remove_password: false,
     remove_private_key: false,
     trust_new_host_key: false,
 });
 
-const defaultPorts = { sftp: 22, ftp: 21 } as const;
+const defaultPorts = { sftp: 22, ftp: 21, s3: 443 } as const;
+
+const isS3 = computed(() => form.driver === 's3');
 
 // Switching type moves a default port along with it, and leaves a custom one alone.
 watch(
@@ -98,7 +108,7 @@ const sourceLabel = computed(() => {
     <div class="flex max-w-xl flex-col gap-6 p-4">
         <Heading
             title="World storage"
-            description="The SFTP or FTP server where worlds live while no VPS is running. Each start downloads the server's world from here, and each stop uploads it again."
+            description="The SFTP, FTP or S3-compatible storage where worlds live while no VPS is running. Each start downloads the server's world from here, and each stop uploads it again."
         />
 
         <div
@@ -138,11 +148,74 @@ const sourceLabel = computed(() => {
                 >
                     <option value="sftp">SFTP (SSH)</option>
                     <option value="ftp">FTP</option>
+                    <option value="s3">S3-compatible</option>
                 </select>
                 <InputError :message="errors.driver" />
             </div>
 
-            <div class="grid grid-cols-[1fr_7rem] gap-4">
+            <template v-if="isS3">
+                <div class="grid gap-2">
+                    <Label for="endpoint">Endpoint</Label>
+                    <Input
+                        id="endpoint"
+                        v-model="form.endpoint"
+                        name="endpoint"
+                        autocomplete="off"
+                        placeholder="https://fsn1.your-objectstorage.com"
+                    />
+                    <p class="text-sm text-muted-foreground">
+                        Leave empty for AWS. Hetzner Object Storage, Cloudflare R2,
+                        Backblaze B2 and MinIO each give you one.
+                    </p>
+                    <InputError :message="errors.endpoint" />
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="grid gap-2">
+                        <Label for="region">Region</Label>
+                        <Input
+                            id="region"
+                            v-model="form.region"
+                            name="region"
+                            required
+                            autocomplete="off"
+                            placeholder="eu-central-1"
+                        />
+                        <InputError :message="errors.region" />
+                    </div>
+                    <div class="grid gap-2">
+                        <Label for="bucket">Bucket</Label>
+                        <Input
+                            id="bucket"
+                            v-model="form.bucket"
+                            name="bucket"
+                            required
+                            autocomplete="off"
+                        />
+                        <InputError :message="errors.bucket" />
+                    </div>
+                </div>
+
+                <div class="grid gap-2">
+                    <div class="flex items-center gap-2">
+                        <input
+                            id="path_style"
+                            v-model="form.path_style"
+                            type="checkbox"
+                            class="size-4"
+                        />
+                        <Label for="path_style"
+                            >Path-style URLs (bucket in the path)</Label
+                        >
+                    </div>
+                    <p class="text-sm text-muted-foreground">
+                        On for MinIO and other self-hosted servers. Off for AWS,
+                        Hetzner, R2 and B2.
+                    </p>
+                </div>
+            </template>
+
+            <div v-else class="grid grid-cols-[1fr_7rem] gap-4">
                 <div class="grid gap-2">
                     <Label for="host">Host</Label>
                     <Input
@@ -171,7 +244,9 @@ const sourceLabel = computed(() => {
             </div>
 
             <div class="grid gap-2">
-                <Label for="username">User</Label>
+                <Label for="username">{{
+                    isS3 ? 'Access key' : 'User'
+                }}</Label>
                 <Input
                     id="username"
                     v-model="form.username"
@@ -183,7 +258,9 @@ const sourceLabel = computed(() => {
             </div>
 
             <div class="grid gap-2">
-                <Label for="password">Password</Label>
+                <Label for="password">{{
+                    isS3 ? 'Secret key' : 'Password'
+                }}</Label>
                 <Input
                     id="password"
                     v-model="form.password"
@@ -207,7 +284,8 @@ const sourceLabel = computed(() => {
                         class="size-4"
                     />
                     <Label for="remove_password"
-                        >Remove the saved password</Label
+                        >Remove the saved
+                        {{ isS3 ? 'secret key' : 'password' }}</Label
                     >
                 </div>
                 <InputError :message="errors.password" />
@@ -250,18 +328,24 @@ const sourceLabel = computed(() => {
             </div>
 
             <div class="grid gap-2">
-                <Label for="root">Base folder</Label>
+                <Label for="root">{{
+                    isS3 ? 'Folder prefix (optional)' : 'Base folder'
+                }}</Label>
                 <Input
                     id="root"
                     v-model="form.root"
                     name="root"
-                    required
+                    :required="!isS3"
                     autocomplete="off"
                     class="font-mono"
                 />
                 <p class="text-sm text-muted-foreground">
                     Each server's worlds go in a folder named after its slug
                     inside this one.
+                    <template v-if="isS3"
+                        >The VPS only ever gets short-lived pre-signed links,
+                        never these keys.</template
+                    >
                 </p>
                 <InputError :message="errors.root" />
             </div>

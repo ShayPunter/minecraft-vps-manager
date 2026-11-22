@@ -14,6 +14,9 @@ use App\Models\Server;
 use App\Models\ServerRun;
 use App\Models\User;
 use App\WorldStorage\Archives;
+use App\WorldStorage\S3Transfers;
+use App\WorldStorage\S3Upload;
+use App\WorldStorage\StorageSettings;
 use App\WorldStorage\StorageUnavailable;
 use App\WorldStorage\WorldStorage;
 use Illuminate\Contracts\Cache\LockTimeoutException;
@@ -45,6 +48,7 @@ class ServerLauncher
         private readonly WorldStorage $storage,
         private readonly Archives $archives,
         private readonly Dns $dns,
+        private readonly S3Transfers $s3,
     ) {}
 
     /**
@@ -385,8 +389,22 @@ class ServerLauncher
             return;
         }
 
+        $downloadUrl = null;
+
+        if ($archive !== null && $storage !== null && $storage->isS3()) {
+            try {
+                // S3 (#5347): a link to this one archive, valid a little longer than the job.
+                $downloadUrl = $this->s3->downloadUrl($storage, $archive->path, (int) config('minecraft.prepare_timeout') + 600);
+            } catch (Throwable $e) {
+                Log::info("Run {$run->id}: couldn't sign the world download link, trying again: {$e->getMessage()}");
+                $this->retryPrepare($run);
+
+                return;
+            }
+        }
+
         try {
-            $this->shell->putFiles($run->ipv4, WorldSync::prepareFiles($server, $archive, $storage), $run->ssh_private_key);
+            $this->shell->putFiles($run->ipv4, WorldSync::prepareFiles($server, $archive, $storage, $downloadUrl), $run->ssh_private_key);
             $result = $this->shell->run($run->ipv4, WorldSync::PREPARE_COMMAND, (int) config('minecraft.prepare_timeout'), $run->ssh_private_key);
         } catch (RemoteShellException $e) {
             Log::info("Run {$run->id}: VPS not ready for the world yet, trying again: {$e->getMessage()}");
@@ -471,17 +489,38 @@ class ServerLauncher
         }
 
         $path = $this->archives->newPath($server, 'save.zip');
+        $upload = null;
+
+        if ($storage->isS3()) {
+            try {
+                // S3 (#5347): the app starts the multipart upload with its own keys; the VPS
+                // only gets links for the parts, the completion and the read-back.
+                $upload = $this->s3->startUpload(
+                    $storage,
+                    $path,
+                    (int) config('minecraft.save_timeout') + 600,
+                    (int) config('world_storage.s3_part_mb') * 1024 * 1024,
+                    $this->s3MaxParts(),
+                );
+            } catch (Throwable $e) {
+                $this->stopFailed($run, "Minecraft stopped, but world storage wouldn't start the upload: {$e->getMessage()}");
+
+                return false;
+            }
+        }
 
         try {
-            $this->shell->putFiles($host, WorldSync::saveFiles($server, $storage), $run->ssh_private_key);
+            $this->shell->putFiles($host, WorldSync::saveFiles($server, $storage, $upload), $run->ssh_private_key);
             $result = $this->shell->run($host, WorldSync::saveCommand($server, $path), (int) config('minecraft.save_timeout'), $run->ssh_private_key);
         } catch (RemoteShellException $e) {
+            $this->abortUpload($run, $storage, $upload);
             $this->stopFailed($run, "Minecraft stopped, but uploading the world failed: {$e->getMessage()}");
 
             return false;
         }
 
         if (! $result->succeeded()) {
+            $this->abortUpload($run, $storage, $upload);
             $output = mb_substr(trim($result->output), -500);
             $this->stopFailed($run, "Minecraft stopped, but uploading the world failed (exit {$result->exitCode}".($output !== '' ? ": {$output}" : '').').');
 
@@ -491,12 +530,14 @@ class ServerLauncher
         try {
             $saved = WorldSync::parseSaveOutput($result->output);
         } catch (InvalidArgumentException $e) {
+            $this->abortUpload($run, $storage, $upload);
             $this->stopFailed($run, "Minecraft stopped, but the upload didn't finish: {$e->getMessage()}");
 
             return false;
         }
 
         if ($saved === null) {
+            $this->abortUpload($run, $storage, $upload);
             Log::info("Run {$run->id}: the server folder was empty, nothing to save.");
 
             return true;
@@ -505,12 +546,14 @@ class ServerLauncher
         try {
             $stored = $this->storage->disk($storage)->size($path);
         } catch (Throwable $e) {
+            $this->abortUpload($run, $storage, $upload);
             $this->stopFailed($run, "The world was uploaded, but the app couldn't check it on world storage: {$e->getMessage()}");
 
             return false;
         }
 
         if ($stored !== $saved['size']) {
+            $this->abortUpload($run, $storage, $upload);
             $this->stopFailed($run, "World storage has {$stored} bytes of the {$saved['size']} uploaded.");
 
             return false;
@@ -523,6 +566,32 @@ class ServerLauncher
         Log::info('World saved', ['server' => $server->slug, 'run' => $run->id, 'archive' => $archive->id, 'size' => $saved['size']]);
 
         return true;
+    }
+
+    /**
+     * Enough part links for a world of world_storage.s3_max_world_gb (S3 allows 10,000).
+     */
+    private function s3MaxParts(): int
+    {
+        $partMb = (int) config('world_storage.s3_part_mb');
+
+        return min(10000, (int) ceil((int) config('world_storage.s3_max_world_gb') * 1024 / $partMb));
+    }
+
+    /**
+     * A save that didn't count: drop its unfinished parts (or the object, if it was finished).
+     */
+    private function abortUpload(ServerRun $run, StorageSettings $storage, ?S3Upload $upload): void
+    {
+        if ($upload === null) {
+            return;
+        }
+
+        $problem = $this->s3->abort($storage, $upload);
+
+        if ($problem !== null) {
+            Log::warning("Run {$run->id}: couldn't clean up the S3 upload of {$upload->path}: {$problem}");
+        }
     }
 
     private function fail(ServerRun $run, string $error): void
