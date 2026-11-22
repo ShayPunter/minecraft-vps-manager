@@ -1,0 +1,8 @@
+version: 2
+updates:
+  # Composer and npm updates are switched on by the Laravel 13 port: the
+  # Laravel 10 dependency tree is being replaced, so bumps to it would be wasted.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

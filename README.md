@@ -6,9 +6,23 @@ Minecraft VPS Manager is a web application which seamlessly enables friends and 
 -   Seamless integration with Linode (more providers to come)
 -   Server watchdog which will shutdown the server safely if no player has logged in within 15 minutes.
 
-## Setting up the Minecraft VPS Manager
+## Status
 
-Guide coming soon.
+Being revived (November 2026): moving to Laravel 13 and Hetzner Cloud, hosted on Laravel Forge.
+The code on `main` is still the 2023 Laravel 10 / Linode version.
+
+## Development
+
+Requires PHP 8.3, Composer and Node 24.
+
+```bash
+composer install
+npm ci --legacy-peer-deps
+cp .env.example .env && php artisan key:generate
+php artisan migrate
+npm run build
+php artisan test
+```
 
 ## Improvements to Minecraft VPS Manager
 
