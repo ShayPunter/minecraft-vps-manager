@@ -6,7 +6,10 @@ use App\Cloud\CloudProvider;
 use App\Cloud\FakeCloudProvider;
 use App\Cloud\HetznerCloud;
 use App\Servers\FakeMinecraftProbe;
+use App\Servers\FakeRemoteShell;
 use App\Servers\MinecraftProbe;
+use App\Servers\RemoteShell;
+use App\Servers\SshRemoteShell;
 use App\Servers\TcpMinecraftProbe;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -47,6 +50,14 @@ class AppServiceProvider extends ServiceProvider
             }
 
             return new TcpMinecraftProbe;
+        });
+
+        $this->app->singleton(RemoteShell::class, function ($app): RemoteShell {
+            if ($app->environment('testing', 'e2e') || config('services.hetzner.fake') === true) {
+                return new FakeRemoteShell($app->make(CacheRepository::class));
+            }
+
+            return new SshRemoteShell((string) config('services.hetzner.ssh_private_key_path'));
         });
     }
 

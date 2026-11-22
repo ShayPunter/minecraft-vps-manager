@@ -197,4 +197,22 @@ const typesHere = computed(() =>
         </select>
         <InputError :message="errors.java_version" />
     </div>
+
+    <div class="grid gap-2">
+        <Label for="idle_minutes">Stop after (minutes with nobody on)</Label>
+        <Input
+            id="idle_minutes"
+            name="idle_minutes"
+            type="number"
+            min="5"
+            max="240"
+            :default-value="server?.idle_minutes ?? 15"
+            required
+        />
+        <p class="text-sm text-muted-foreground">
+            The world is saved, then the VPS is deleted. Time before Minecraft
+            is up doesn't count.
+        </p>
+        <InputError :message="errors.idle_minutes" />
+    </div>
 </template>

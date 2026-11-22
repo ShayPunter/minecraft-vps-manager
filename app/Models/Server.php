@@ -24,12 +24,13 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $location
  * @property string $start_command
  * @property int $java_version
+ * @property int $idle_minutes minutes with nobody on before the watchdog stops it
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read ServerRun|null $activeRun
  * @property-read ServerRun|null $latestRun
  */
-#[Fillable(['name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version'])]
+#[Fillable(['name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes'])]
 class Server extends Model
 {
     /** @use HasFactory<ServerFactory> */
@@ -79,6 +80,7 @@ class Server extends Model
         return [
             'is_public' => 'boolean',
             'java_version' => 'integer',
+            'idle_minutes' => 'integer',
         ];
     }
 }

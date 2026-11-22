@@ -4,6 +4,7 @@ export type ServerStatus =
     | 'starting'
     | 'online'
     | 'stopping'
+    | 'stop_failed'
     | 'stopped'
     | 'failed';
 
@@ -18,8 +19,13 @@ export type ServerSummary = {
     status: ServerStatus;
     status_label: string;
     address: string | null;
+    players_online: number | null;
+    idle_minutes: number;
     error: string | null;
+    error_label: string | null;
     can_start: boolean;
+    can_stop: boolean;
+    can_force_delete: boolean;
 };
 
 export type ServerTypeOption = {
@@ -46,4 +52,5 @@ export type ServerDefinition = {
     location: string;
     start_command: string;
     java_version: number;
+    idle_minutes: number;
 };

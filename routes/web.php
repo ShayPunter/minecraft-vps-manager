@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\ServerStartController;
+use App\Http\Controllers\ServerStopController;
 use App\Http\Controllers\VersionController;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use Illuminate\Support\Facades\Route;
@@ -24,6 +25,8 @@ Route::post('servers/{server}/start', ServerStartController::class)
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
+    // Admins, or whoever started the run (the controller 404s everyone else).
+    Route::post('servers/{server}/stop', ServerStopController::class)->name('servers.stop');
 });
 
 Route::middleware(['auth', EnsureUserIsAdmin::class])

@@ -77,8 +77,36 @@ output. Run with the real binary:
   line, in `/usr/local/bin/mvm-start` on the VPS); the unit is `minecraft-<slug>.service`.
   Don't use `escapeshellarg()` there: on Windows it double-quotes, and the script runs on Linux.
 - Start is `POST /servers/{slug}/start` (`throttle:server-start`, 5/min per user or IP).
-  Public servers can be started by guests (#5276); private ones 404 for guests. Admin →
-  Servers has Stop (deletes the VPS) until the watchdog (#5283) stops idle servers itself.
+  Public servers can be started by guests (#5276); private ones 404 for guests.
+- Watchdog (#5283, `App\Servers\Watchdog`): `servers:watch` every minute (advance starting
+  runs; give up on runs not online `MVM_BOOT_TIMEOUT_MINUTES` (20) after Start, VPS deleted,
+  `failed`; ping online runs and stop one after the server's `idle_minutes` (default 15)
+  with nobody on, counted from `online_at` or the last ping with players, so boot time never
+  counts). `servers:sweep` every 10 minutes (stuck `stopping` → `stop_failed`; retry
+  `stop_failed`; delete managed VPSes no active run knows, matching the run id at the end of
+  the VPS name so a run still provisioning isn't hit; one alert per run older than
+  `MVM_MAX_RUN_HOURS` (8)). Players come from Minecraft's server-list ping
+  (`TcpMinecraftProbe::playersOnline`, checked against a real vanilla server in Docker);
+  no answer counts as idle.
+- Stopping: `ServerLauncher::requestStop()` sets `stopping` (atomic update, so two clicks
+  or the watchdog can't double up) and queues `StopServerRun` (1 try, 600 s timeout; the
+  database queue's `retry_after` defaults to 900 for it). `stop()`: a run that was ever
+  online first gets `CloudInit::stopCommand()` over SSH as root (`systemctl stop` = SIGTERM,
+  Minecraft's shutdown hook saves the worlds; the unit has `SuccessExitStatus=0 143` and
+  `TimeoutStopSec=300`, and the command fails unless systemd's `Result` is `success`), then
+  the VPS is deleted. Any failure → `stop_failed`: the VPS is **kept**, still counts towards
+  the cap, one alert (`Alerter`: `MVM_ALERT_MAIL` or every admin, plus
+  `MVM_ALERT_DISCORD_WEBHOOK`). Admin → Servers then offers Retry stop and "Delete without
+  saving" (`force=1`, only for `stop_failed`). World upload (#5288) goes between the SSH
+  stop and the delete. `provision()` deletes a VPS that arrives after its run ended.
+- Who can stop: admins (Admin → Servers, or the dashboard), and the signed-in user who
+  started the run (`POST /servers/{slug}/stop`, 404 for anyone else; `ServerPresenter::mayStop`).
+  Guest-started public servers stop by the watchdog or an admin.
+- SSH: `RemoteShell` interface, `SshRemoteShell` (phpseclib 3, root, key at
+  `HETZNER_SSH_PRIVATE_KEY`, default `storage/app/private/ssh/id_ed25519`; no host-key check,
+  every VPS is new and Hetzner doesn't report its key), `FakeRemoteShell` in testing/e2e
+  (records commands in the cache; `failWith()`, `unreachable()`). Checked against a real
+  sshd in Docker: exit codes, output, timeout, wrong key, public key given as private.
 - `ServerCatalog` caches the provider's types/locations for an hour as plain arrays
   (`config/cache.php` has `serializable_classes => false`, so objects can't be cached).
   Default for new servers: cheapest non-deprecated type with ≥ 8 GB in the first German location.

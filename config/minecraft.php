@@ -17,6 +17,17 @@ return [
     // Minecraft's port, used to tell when a server is up.
     'port' => 25565,
 
+    // Watchdog (#5283). Idle minutes before a stop are set per server (default 15).
+    // A run that isn't online this long after Start is deleted and marked failed.
+    'boot_timeout_minutes' => (int) (env('MVM_BOOT_TIMEOUT_MINUTES') ?: 20),
+    // Alert once when a run has been up longer than this (#5276: 8 hours).
+    'max_run_hours' => (int) (env('MVM_MAX_RUN_HOURS') ?: 8),
+    // A stop still "stopping" after this long (the queue worker died) becomes stop_failed.
+    'stuck_stop_minutes' => 15,
+    // Where alerts go: this address (else every admin's email), plus a Discord webhook if set.
+    'alert_mail' => env('MVM_ALERT_MAIL') ?: null,
+    'alert_discord_webhook' => env('MVM_ALERT_DISCORD_WEBHOOK') ?: null,
+
     // Java versions offered on the server form (Ubuntu 24.04 openjdk packages).
     'java_versions' => [17, 21, 25],
 ];

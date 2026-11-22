@@ -61,6 +61,21 @@ class CloudInit
         return "#cloud-config\n".json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
     }
 
+    /**
+     * Run as root over SSH by the watchdog: stop Minecraft (saving the world), flush the disk,
+     * and fail unless systemd says the stop was clean (not killed after TimeoutStopSec).
+     */
+    public static function stopCommand(Server $server): string
+    {
+        if (preg_match(Server::SLUG_PATTERN, $server->slug) !== 1) {
+            throw new InvalidArgumentException("Refusing to build a stop command for slug [{$server->slug}].");
+        }
+
+        $unit = self::unitName($server);
+
+        return 'systemctl stop '.$unit.'; r=$(systemctl show -p Result --value '.$unit.'); sync; echo "result=$r"; [ "$r" = success ]';
+    }
+
     public static function unitName(Server $server): string
     {
         return "minecraft-{$server->slug}.service";
@@ -90,6 +105,11 @@ class CloudInit
             ExecStart=/usr/local/bin/mvm-start
             Restart=on-failure
             RestartSec=10
+            # The watchdog stops the server with systemctl stop: SIGTERM runs Minecraft's
+            # shutdown hook, which saves every world. Java then exits 143, which is a clean
+            # stop. Big modpacks can take a while to save before systemd gives up and kills it.
+            SuccessExitStatus=0 143
+            TimeoutStopSec=300
 
             [Install]
             WantedBy=multi-user.target
