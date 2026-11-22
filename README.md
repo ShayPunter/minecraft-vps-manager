@@ -1,41 +1,43 @@
-## About Minecraft VPS Manager
+# Minecraft VPS Manager
 
-Minecraft VPS Manager is a web application which seamlessly enables friends and players to boot up a particular server and play on it. It uses Linode as the hosting provider and has a server watchdog which will shut down the server after 15 minutes of player inactivity, saving you money.
-
--   Web interface which users can interact with and boot new servers up
--   Seamless integration with Linode (more providers to come)
--   Server watchdog which will shutdown the server safely if no player has logged in within 15 minutes.
+A web app that lets friends start a Minecraft server on its own cloud VPS when they want to
+play. A watchdog checks the server every minute and, after 15 minutes with nobody online,
+saves the world and deletes the VPS, so it only costs money while people play.
 
 ## Status
 
-Being revived (November 2026): moving to Laravel 13 and Hetzner Cloud, hosted on Laravel Forge.
-The code on `main` is still the 2023 Laravel 10 / Linode version.
+Being revived (November 2026) on Laravel 13, Hetzner Cloud and Laravel Forge. Done so far:
+accounts and the admin user pages. Servers, the Hetzner client, the watchdog and world
+storage come next.
+
+- Sign-up is off. An admin creates every account (Admin → Users).
+- Two roles: **admin** (manages users, later servers) and **player**.
 
 ## Development
 
-Requires PHP 8.3, Composer and Node 24.
+Requires PHP 8.3+, Composer and Node 24.
 
 ```bash
 composer install
-npm ci --legacy-peer-deps
+npm ci
 cp .env.example .env && php artisan key:generate
-php artisan migrate
+touch database/database.sqlite && php artisan migrate
+php artisan app:create-admin     # the first admin account
 npm run build
-php artisan test
+composer run dev                 # app + Vite at http://localhost:8000
 ```
 
-## Improvements to Minecraft VPS Manager
+Checks (the same as CI):
 
--   The creation of an admin panel which will enable you to:
-    -- Create new servers (names, which Linode instance it should use, a storage volume to attach to (S3 support coming soon))
-    -- Lock servers behind an admin panel, which will require user accounts to be created in order to start up servers
--   Better route management and naming
+```bash
+vendor/bin/pint --test
+vendor/bin/phpstan analyse --memory-limit=1G
+npm run check
+npm run types:check
+php artisan test
+npm run test:e2e                 # Playwright, on a throwaway SQLite file
+```
 
-<!-- ## Contributing
+## Licence
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions). -->
-
-## License
-
-The Minecraft VPS Manager is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
-Built using the [Laravel PHP Framework](https://laravel.com)
+MIT. See [LICENSE](LICENSE).

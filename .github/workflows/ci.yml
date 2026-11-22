@@ -12,40 +12,73 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# The job name "Tests" is the required check on main: keep it unchanged.
 jobs:
   tests:
     name: Tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: shivammathur/setup-php@v2
+      - name: Checkout code
+        uses: actions/checkout@v7
         with:
-          php-version: '8.3'
-          extensions: mbstring, pdo_sqlite, sqlite3, intl, zip
-          coverage: none
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, dom, fileinfo, sqlite, pdo_sqlite, bcmath, intl
+          coverage: none
+          tools: composer:v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: npm
+          cache: 'npm'
 
-      - name: Install PHP dependencies
-        run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction --prefer-dist --optimize-autoloader
+          npm ci
 
-      # The 2023 lockfile pins laravel-vite-plugin 0.8 next to vite 2; the
-      # Laravel 13 port replaces this toolchain.
-      - name: Install JS dependencies
-        run: npm ci --legacy-peer-deps
-
-      - name: Build assets
-        run: npm run build
-
-      - name: Prepare environment
+      - name: Prepare .env
         run: |
           cp .env.example .env
           php artisan key:generate
 
-      - name: Run tests
+      - name: Code style (Pint)
+        run: vendor/bin/pint --test
+
+      - name: Static analysis (PHPStan)
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+
+      - name: Build frontend (generates Wayfinder routes)
+        run: npm run build
+
+      - name: Lint and format (Vite+)
+        run: npm run check
+
+      - name: Type-check (vue-tsc)
+        run: npm run types:check
+
+      - name: Tests (PHPUnit)
         run: php artisan test
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E (Playwright)
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

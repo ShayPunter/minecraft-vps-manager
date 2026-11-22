@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -27,14 +28,25 @@ class HandleInertiaRequests extends Middleware
     }
 
     /**
-     * Defines the props that are shared by default.
+     * Define the props that are shared by default.
      *
      * @see https://inertiajs.com/shared-data
+     *
+     * @return array<string, mixed>
      */
     public function share(Request $request): array
     {
-        return array_merge(parent::share($request), [
-            //
-        ]);
+        $user = $request->user();
+
+        return [
+            ...parent::share($request),
+            'name' => config('app.name'),
+            'auth' => [
+                // Without relations: a controller that loaded one would otherwise send it to every page.
+                'user' => $user?->withoutRelations(),
+                'isAdmin' => $user instanceof User && $user->isAdmin(),
+            ],
+            'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+        ];
     }
 }
