@@ -26,6 +26,7 @@ class ServerRequest extends FormRequest
         $this->merge([
             'slug' => is_string($this->input('slug')) ? strtolower(trim($this->input('slug'))) : $this->input('slug'),
             'is_public' => $this->boolean('is_public'),
+            'eula' => $this->boolean('eula'),
             'icon_url' => filled($this->input('icon_url')) ? $this->input('icon_url') : null,
             'description' => filled($this->input('description')) ? $this->input('description') : null,
             'subdomain' => $this->normalisedSubdomain(),
@@ -69,6 +70,8 @@ class ServerRequest extends FormRequest
             ],
             'description' => ['nullable', 'string', 'max:500'],
             'is_public' => ['boolean'],
+            // The Minecraft EULA (#5367): ticked, starts write eula.txt with eula=true.
+            'eula' => ['boolean'],
             'icon_url' => ['nullable', 'string', 'max:2048', 'url:https'],
             'server_type' => ['required', 'string', 'max:64', 'regex:/^[a-z0-9-]+$/'],
             'location' => ['required', 'string', 'max:64', 'regex:/^[a-z0-9-]+$/'],

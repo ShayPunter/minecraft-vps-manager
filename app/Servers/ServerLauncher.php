@@ -49,6 +49,7 @@ class ServerLauncher
         private readonly Archives $archives,
         private readonly Dns $dns,
         private readonly S3Transfers $s3,
+        private readonly RunLog $log,
     ) {}
 
     /**
@@ -334,11 +335,33 @@ class ServerLauncher
     public function abandon(ServerRun $run, string $error): void
     {
         if ($run->provider_server_id !== null) {
+            // The VPS (and Minecraft's log on it) is about to go: keep its last lines (#5367).
+            $this->pullFallbackLog($run);
             $this->cloud->deleteServer($run->provider_server_id);
         }
 
+        $cause = $this->log->diagnose($run);
+
         $run->stop_reason = 'boot_timeout';
-        $this->fail($run, $error);
+        $this->fail($run, $cause !== null ? "{$error} Likely cause: {$cause}" : $error);
+    }
+
+    /**
+     * The last journal lines and the setup output, over SSH, before the VPS is deleted. Only
+     * a best effort: a VPS that never let the app in has nothing to give.
+     */
+    private function pullFallbackLog(ServerRun $run): void
+    {
+        if ($run->ipv4 === null || $run->ended_at !== null) {
+            return;
+        }
+
+        try {
+            $result = $this->shell->run($run->ipv4, RunLog::fallbackCommand($run->server), 25, $run->ssh_private_key);
+            $this->log->append($run, 'fallback', $result->output);
+        } catch (Throwable $e) {
+            Log::info("Run {$run->id}: no log pulled before deleting the VPS: {$e->getMessage()}");
+        }
     }
 
     /**
@@ -403,8 +426,11 @@ class ServerLauncher
             }
         }
 
+        // The log shipper (#5367): a fresh token on every attempt, only its hash kept.
+        $shipper = RunLog::shipperFiles($server, $run, $this->log->issueToken($run));
+
         try {
-            $this->shell->putFiles($run->ipv4, WorldSync::prepareFiles($server, $archive, $storage, $downloadUrl), $run->ssh_private_key);
+            $this->shell->putFiles($run->ipv4, WorldSync::prepareFiles($server, $archive, $storage, $downloadUrl) + $shipper, $run->ssh_private_key);
             $result = $this->shell->run($run->ipv4, WorldSync::PREPARE_COMMAND, (int) config('minecraft.prepare_timeout'), $run->ssh_private_key);
         } catch (RemoteShellException $e) {
             Log::info("Run {$run->id}: VPS not ready for the world yet, trying again: {$e->getMessage()}");
@@ -418,6 +444,8 @@ class ServerLauncher
 
             return;
         }
+
+        $this->log->append($run, 'prepare', $result->output);
 
         if (! $result->succeeded()) {
             $output = mb_substr(trim($result->output), -500);

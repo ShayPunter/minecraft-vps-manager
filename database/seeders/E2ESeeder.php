@@ -53,5 +53,12 @@ class E2ESeeder extends Seeder
             'email' => 'dns-admin@example.com',
             'created_at' => now()->subYear(),
         ]);
+
+        // server-log.spec (#5367), its own admin for the same reason.
+        User::factory()->admin()->create([
+            'name' => 'Lee Logs',
+            'email' => 'log-admin@example.com',
+            'created_at' => now()->subYear(),
+        ]);
     }
 }

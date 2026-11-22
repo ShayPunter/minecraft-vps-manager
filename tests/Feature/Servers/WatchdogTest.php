@@ -15,6 +15,7 @@ use App\Servers\FakeMinecraftProbe;
 use App\Servers\FakeRemoteShell;
 use App\Servers\MinecraftProbe;
 use App\Servers\RemoteShell;
+use App\Servers\RunLog;
 use App\Servers\ServerLauncher;
 use App\Servers\WorldSync;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -311,8 +312,9 @@ class WatchdogTest extends TestCase
         $this->assertNull($run->active_server_id);
         $this->assertStringContainsString("wasn't online within 20 minutes", (string) $run->error);
         $this->assertNull($this->cloud()->findServer($vpsId));
-        // Never online: prepare.sh ran, but there was no world to save.
-        $this->assertSame([WorldSync::PREPARE_COMMAND], array_column($this->shell()->commands(), 'command'));
+        // Never online: prepare.sh ran, but there was no world to save. Before the VPS was
+        // deleted, the app pulled its last log lines (#5367).
+        $this->assertSame([WorldSync::PREPARE_COMMAND, RunLog::fallbackCommand($server)], array_column($this->shell()->commands(), 'command'));
         $this->assertAlerted("Broken didn't start");
     }
 

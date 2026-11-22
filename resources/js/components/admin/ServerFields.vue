@@ -19,6 +19,15 @@ const props = defineProps<{
 
 const subdomain = ref(props.server?.subdomain ?? '');
 
+// In the script, not a template attribute: vue-tsc 3.3.13 misreads "https://" there.
+const eulaUrl = 'https://aka.ms/MinecraftEULA';
+
+const eulaAcceptedOn = computed(() =>
+    props.server?.eula_accepted_at
+        ? new Date(props.server.eula_accepted_at).toLocaleDateString()
+        : null,
+);
+
 // In the script, not the template: vue-tsc 3.3.13 misreports templates with https:// attributes.
 const iconPlaceholder = 'https://…';
 
@@ -245,6 +254,39 @@ const currentTypeRetired = computed(
             </option>
         </select>
         <InputError :message="errors.java_version" />
+    </div>
+
+    <div class="grid gap-2">
+        <div class="flex items-center gap-2">
+            <input
+                id="eula"
+                type="checkbox"
+                name="eula"
+                value="1"
+                :checked="!!server?.eula_accepted_at"
+                class="size-4"
+            />
+            <Label for="eula"
+                >I accept the Minecraft EULA for this server</Label
+            >
+        </div>
+        <p class="text-sm text-muted-foreground" data-test="eula-hint">
+            Minecraft won't start until its EULA is accepted. Ticked, every
+            start writes eula.txt with eula=true. Read it at
+            <a
+                :href="eulaUrl"
+                target="_blank"
+                rel="noopener"
+                class="underline"
+                >{{ eulaUrl }}</a
+            >.
+            <template v-if="server?.eula_accepted_at"
+                >Accepted by
+                {{ server.eula_accepted_by ?? 'a deleted user' }} on
+                {{ eulaAcceptedOn }}.</template
+            >
+        </p>
+        <InputError :message="errors.eula" />
     </div>
 
     <div class="grid gap-2">

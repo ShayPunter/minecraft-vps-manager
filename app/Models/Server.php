@@ -28,6 +28,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int $idle_minutes minutes with nobody on before the watchdog stops it
  * @property int|null $current_world_archive_id the archive the next start downloads (#5288)
  * @property string|null $subdomain its name inside the DNS zone, e.g. "atm9" → atm9.<domain> (#5338)
+ * @property CarbonImmutable|null $eula_accepted_at when an admin accepted the Minecraft EULA for it (#5367)
+ * @property int|null $eula_accepted_by who did
+ * @property-read User|null $eulaAcceptor
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read ServerRun|null $activeRun
@@ -59,6 +62,14 @@ class Server extends Model
     public function activeRun(): HasOne
     {
         return $this->hasOne(ServerRun::class, 'active_server_id');
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function eulaAcceptor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'eula_accepted_by');
     }
 
     /**
@@ -102,6 +113,7 @@ class Server extends Model
     {
         return [
             'is_public' => 'boolean',
+            'eula_accepted_at' => 'datetime',
             'java_version' => 'integer',
             'idle_minutes' => 'integer',
             'current_world_archive_id' => 'integer',
