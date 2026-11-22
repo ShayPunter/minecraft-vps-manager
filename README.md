@@ -48,7 +48,15 @@ begins with a fresh world.
    keys, retries).
 6. **First admin**: `php artisan app:create-admin --name="Your Name" --email=you@example.com`
    (a password is generated and printed), then `php artisan app:users` to check.
-7. **Check it**: `php artisan app:doctor`. It tries the token with one read-only call, checks
+7. **World storage**: in the app, Admin → World storage. Pick SFTP (a Hetzner Storage Box
+   or your own server; a sub-account limited to one folder is best, since each VPS gets
+   these credentials) or FTP (TLS on by default), fill in host, port, user, password or
+   private key and a base folder, then **Test and save**. Saving tests the connection,
+   pins the SFTP host key and stores the secrets encrypted with `APP_KEY`.
+   For world/modpack uploads bigger than PHP's default 2 MB, raise `upload_max_filesize`
+   and `post_max_size` (Forge → server → PHP) and nginx's `client_max_body_size` to match
+   `MVM_WORLD_UPLOAD_MAX_MB` (default 4096).
+8. **Check it**: `php artisan app:doctor`. It tries the token with one read-only call, checks
    the app can make SSH keys, has the worker run a test job, checks the scheduler ran in the last
    3 minutes, and says where alerts go. It prints no secrets and exits 1 if anything fails.
 

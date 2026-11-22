@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Admin\ServerController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\WorldArchiveController;
+use App\Http\Controllers\Admin\WorldStorageController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\ServerStartController;
@@ -37,6 +39,15 @@ Route::middleware(['auth', EnsureUserIsAdmin::class])
         Route::resource('users', UserController::class)->except(['show']);
         Route::resource('servers', ServerController::class)->except(['show']);
         Route::post('servers/{server}/stop', [ServerController::class, 'stop'])->name('servers.stop');
+
+        // World storage (#5288).
+        Route::get('world-storage', [WorldStorageController::class, 'edit'])->name('world-storage.edit');
+        Route::put('world-storage', [WorldStorageController::class, 'update'])->name('world-storage.update');
+        Route::post('world-storage/test', [WorldStorageController::class, 'test'])
+            ->middleware('throttle:10,1')
+            ->name('world-storage.test');
+        Route::post('servers/{server}/world', [WorldArchiveController::class, 'store'])->name('servers.world.store');
+        Route::get('servers/{server}/world/{archive}', [WorldArchiveController::class, 'show'])->name('servers.world.show');
     });
 
 require __DIR__.'/settings.php';

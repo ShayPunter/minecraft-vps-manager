@@ -8,6 +8,7 @@ use Database\Factories\ServerFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
@@ -25,10 +26,12 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $start_command
  * @property int $java_version
  * @property int $idle_minutes minutes with nobody on before the watchdog stops it
+ * @property int|null $current_world_archive_id the archive the next start downloads (#5288)
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read ServerRun|null $activeRun
  * @property-read ServerRun|null $latestRun
+ * @property-read WorldArchive|null $currentWorldArchive
  */
 #[Fillable(['name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes'])]
 class Server extends Model
@@ -62,6 +65,22 @@ class Server extends Model
         return $this->hasOne(ServerRun::class)->latestOfMany();
     }
 
+    /**
+     * @return HasMany<WorldArchive, $this>
+     */
+    public function worldArchives(): HasMany
+    {
+        return $this->hasMany(WorldArchive::class);
+    }
+
+    /**
+     * @return BelongsTo<WorldArchive, $this>
+     */
+    public function currentWorldArchive(): BelongsTo
+    {
+        return $this->belongsTo(WorldArchive::class, 'current_world_archive_id');
+    }
+
     public function status(): RunStatus
     {
         return $this->activeRun !== null ? $this->activeRun->status : RunStatus::Stopped;
@@ -81,6 +100,7 @@ class Server extends Model
             'is_public' => 'boolean',
             'java_version' => 'integer',
             'idle_minutes' => 'integer',
+            'current_world_archive_id' => 'integer',
         ];
     }
 }

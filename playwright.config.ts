@@ -24,6 +24,8 @@ const appEnv = {
     INERTIA_SSR_ENABLED: 'false',
     // Check starting servers on every poll: the fake VPS boots on its first check.
     MVM_CHECK_INTERVAL: '0',
+    // World storage (#5288): a local folder, emptied by serve.mjs.
+    WORLD_STORAGE_FAKE_ROOT: join(tmpdir(), 'mvm-e2e', 'world-storage'),
 };
 
 export default defineConfig({

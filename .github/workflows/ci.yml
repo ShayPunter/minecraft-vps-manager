@@ -19,6 +19,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # A real SFTP server for tests/Feature/WorldStorage/SftpIntegrationTest (#5288).
+    services:
+      sftp:
+        image: atmoz/sftp:alpine
+        ports:
+          - 2222:22
+        # user:password:uid:gid:folder. It's up long before PHPUnit runs (installs and the build come first).
+        env:
+          SFTP_USERS: mvm:mvm-test:1001:1001:upload
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -29,7 +39,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: mbstring, dom, fileinfo, sqlite, pdo_sqlite, bcmath, intl
+          extensions: mbstring, dom, fileinfo, sqlite, pdo_sqlite, bcmath, intl, ftp, zip
           coverage: none
           tools: composer:v2
 
@@ -66,6 +76,11 @@ jobs:
 
       - name: Tests (PHPUnit)
         run: php artisan test
+        env:
+          MVM_SFTP_TEST_HOST: 127.0.0.1
+          MVM_SFTP_TEST_PORT: '2222'
+          MVM_SFTP_TEST_USER: mvm
+          MVM_SFTP_TEST_PASSWORD: mvm-test
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium

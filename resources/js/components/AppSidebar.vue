@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { FolderGit2, LayoutGrid, Server, Users } from '@lucide/vue';
+import { FolderGit2, HardDrive, LayoutGrid, Server, Users } from '@lucide/vue';
 import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
@@ -18,6 +18,7 @@ import {
 import { dashboard } from '@/routes';
 import { index as adminServers } from '@/routes/admin/servers';
 import { index as adminUsers } from '@/routes/admin/users';
+import { edit as adminWorldStorage } from '@/routes/admin/world-storage';
 import type { NavItem } from '@/types';
 
 const page = usePage();
@@ -32,6 +33,11 @@ const mainNavItems = computed<NavItem[]>(() => [
         ? [
               { title: 'Servers', href: adminServers(), icon: Server },
               { title: 'Users', href: adminUsers(), icon: Users },
+              {
+                  title: 'World storage',
+                  href: adminWorldStorage(),
+                  icon: HardDrive,
+              },
           ]
         : []),
 ]);

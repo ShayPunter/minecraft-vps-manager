@@ -138,6 +138,32 @@ output. Run with the real binary:
   `ServerType`'s fields change, or the cached arrays no longer fit the constructor.
   E2E's `server-types.spec` signs in as `catalog-admin@example.com` (Fortify's login limit).
 - The welcome page has no app layout, so it mounts its own `<Toaster />`.
+- World storage (#5288, `App\WorldStorage`): one SFTP or FTP(S) server, set in Admin →
+  World storage (`WorldStorageSetting`, one row; password and private key `encrypted` +
+  `$hidden`, never sent to the page: it only gets `has_password`). The env
+  (`config/world_storage.php`, `WORLD_STORAGE_*`) is the fallback while no row exists.
+  `WorldStorage::settings()` throws `StorageUnavailable` (message safe to show) when nothing
+  is set up, SFTP has no pinned host key, or APP_KEY changed (DecryptException). Saving
+  always runs `test()` first: SFTP fetches the host key with phpseclib, refuses a different
+  one than the saved key for the same host+port unless "Trust the new host key" is ticked,
+  then writes/sizes/deletes `.mvm-connection-test/probe` (in a folder, so a missing base
+  folder gets made). Flysystem pins it too (`hostFingerprint` = `sha256:<base64>`).
+  Host, user and base folder are pattern-checked (`StorageSettings::*_PATTERN`, no `..`),
+  because part 2 puts them in a shell script on the VPS. In testing/e2e (or
+  `WORLD_STORAGE_FAKE`) the disk is a local folder (`WORLD_STORAGE_FAKE_ROOT`; E2E uses
+  `%TEMP%/mvm-e2e/world-storage`, emptied by serve.mjs), the host key is
+  `WorldStorage::FAKE_HOST_KEY` and host `unreachable.invalid` fails the test.
+  `Archives`: `WorldArchive` rows + files under `<slug>/` (`Ymd-His-<rand>-upload.zip`),
+  `servers.current_world_archive_id` = what the next start downloads, only the newest 3
+  kept (`prune()`, never the current one). Uploads go through `ZipInspector` (no absolute
+  paths, `..`, backslashes, drive letters or symlinks), are refused while a run is active,
+  and are size-checked on storage before they count. Downloads stream through the app.
+  Deleting a server keeps its archives unless `delete_archives` is ticked.
+  `SftpIntegrationTest` runs against CI's `atmoz/sftp` service (`MVM_SFTP_TEST_*`); locally,
+  run it in `php:8.4-cli` on a Docker network with `atmoz/sftp:alpine` (no published port).
+  `league/flysystem-ftp` needs ext-ftp, which this PC's PHP lacks: `composer` commands here
+  need `--ignore-platform-req=ext-ftp` (CI and Forge have it).
+  Part 2 (start download, stop upload with SHA-256 check) is still to come.
 - `App\Cloud` (#5281): `CloudProvider` interface (create/find/delete server, managed
   servers, create/delete/list managed SSH keys, server types, locations), `HetznerCloud`
   (Laravel `Http::`, token from `config('services.hetzner.*')`), `FakeCloudProvider` (state in the cache, so it survives
