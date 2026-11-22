@@ -8,6 +8,9 @@ use App\Cloud\HetznerCloud;
 use App\Dns\CloudflareDns;
 use App\Dns\DnsProvider;
 use App\Dns\FakeDnsProvider;
+use App\Minecraft\FakeVersions;
+use App\Minecraft\OnlineVersions;
+use App\Minecraft\VersionSource;
 use App\Servers\FakeMinecraftProbe;
 use App\Servers\FakeRemoteShell;
 use App\Servers\MinecraftProbe;
@@ -70,6 +73,15 @@ class AppServiceProvider extends ServiceProvider
             }
 
             return new CloudflareDns((string) config('services.cloudflare.base_url'));
+        });
+
+        // Tests and E2E never ask Mojang, PaperMC or Fabric (#5351).
+        $this->app->singleton(VersionSource::class, function ($app): VersionSource {
+            if ($app->environment('testing', 'e2e')) {
+                return new FakeVersions($app->make(CacheRepository::class));
+            }
+
+            return new OnlineVersions;
         });
 
         // Tests and E2E keep worlds in a local folder, whatever the settings say (#5288).

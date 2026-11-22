@@ -2,6 +2,8 @@
 
 namespace App\Servers;
 
+use App\Minecraft\InstallPlan;
+use App\Minecraft\Software;
 use App\Models\Server;
 use App\Models\WorldArchive;
 use App\WorldStorage\S3Upload;
@@ -46,11 +48,15 @@ class WorldSync
      *
      * @return array<string, array{0: string, 1: int}> remote path => [contents, mode]
      */
-    public static function prepareFiles(Server $server, ?WorldArchive $archive, ?StorageSettings $storage, ?string $downloadUrl = null): array
+    public static function prepareFiles(Server $server, ?WorldArchive $archive, ?StorageSettings $storage, ?string $downloadUrl = null, ?InstallPlan $install = null): array
     {
         self::checkSlug($server);
 
-        $files = [self::DIR.'/prepare.sh' => [self::prepareScript($server, $archive, $storage), 0700]];
+        if ($archive !== null && $install !== null) {
+            throw new InvalidArgumentException('A server with a saved world is never installed over (#5351).');
+        }
+
+        $files = [self::DIR.'/prepare.sh' => [self::prepareScript($server, $archive, $storage, $install), 0700]];
 
         if ($archive !== null) {
             if ($storage === null) {
@@ -134,9 +140,55 @@ class WorldSync
         throw new InvalidArgumentException('The save script ended without saying what it saved.');
     }
 
-    private static function prepareScript(Server $server, ?WorldArchive $archive, ?StorageSettings $storage): string
+    /**
+     * A fresh install (#5351): download each file, check it against the hash its source
+     * published, and for Fabric run the installer in the server folder (it fetches the
+     * loader's libraries from Fabric's Maven and writes fabric-server-launch.jar). The URLs,
+     * names, hashes and versions were all checked by Download / InstallPlan.
+     */
+    private static function installScript(InstallPlan $install): string
     {
-        $fetch = '';
+        $script = "# No saved world yet: install {$install->description} (#5351).\n"
+            .'echo '.self::quote("Installing {$install->description}")."\n"
+            .<<<'SH'
+            for tool in curl sha1sum sha256sum; do
+                if ! command -v "$tool" >/dev/null 2>&1; then echo "$tool isn't installed on the VPS."; exit 20; fi
+            done
+            get() {
+                if ! curl -fsSL --proto '=https' --retry 3 --retry-delay 5 --connect-timeout 20 -o "$2" "$1"; then
+                    echo "Couldn't download $1."
+                    exit 23
+                fi
+                sum=$("${3}sum" "$2" | cut -d " " -f 1)
+                if [ "$sum" != "$4" ]; then
+                    echo "$(basename "$2") doesn't match the $3 its source published: not installing it."
+                    rm -f "$2"
+                    exit 24
+                fi
+            }
+
+            SH;
+
+        foreach ($install->downloads as $download) {
+            $target = ($download->intoServerFolder ? '"$DIR"/' : '"$M/work"/').$download->file;
+            $script .= 'get '.self::quote($download->url).' '.$target.' '.$download->algorithm.' '.self::quote($download->hash)."\n";
+        }
+
+        if ($install->software === Software::Fabric) {
+            $installer = $install->installer();
+
+            $script .= 'echo '.self::quote("Running the Fabric installer (loader {$install->fabricLoader})")."\n"
+                .'if ! java -jar "$M/work/'.$installer?->file.'" server -mcversion '.self::quote($install->version)
+                .' -loader '.self::quote((string) $install->fabricLoader).' -dir "$DIR"; then echo "The Fabric installer failed."; exit 25; fi'."\n"
+                .'if [ ! -f "$DIR/fabric-server-launch.jar" ]; then echo "The Fabric installer wrote no fabric-server-launch.jar."; exit 25; fi'."\n";
+        }
+
+        return $script."\n";
+    }
+
+    private static function prepareScript(Server $server, ?WorldArchive $archive, ?StorageSettings $storage, ?InstallPlan $install = null): string
+    {
+        $fetch = $install !== null ? self::installScript($install) : '';
 
         if ($archive !== null && $storage !== null) {
             if (preg_match(self::ARCHIVE_PATH_PATTERN, $archive->path) !== 1) {

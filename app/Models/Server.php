@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\RunStatus;
+use App\Minecraft\Software;
 use Carbon\CarbonImmutable;
 use Database\Factories\ServerFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -25,6 +26,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $location
  * @property string $start_command
  * @property int $java_version
+ * @property Software $software custom, or what the first start without a saved world installs (#5351)
+ * @property string|null $minecraft_version the version it installs (null for custom)
  * @property int $idle_minutes minutes with nobody on before the watchdog stops it
  * @property int|null $current_world_archive_id the archive the next start downloads (#5288)
  * @property string|null $subdomain its name inside the DNS zone, e.g. "atm9" → atm9.<domain> (#5338)
@@ -37,11 +40,14 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property-read ServerRun|null $latestRun
  * @property-read WorldArchive|null $currentWorldArchive
  */
-#[Fillable(['name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain'])]
+#[Fillable(['name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'software', 'minecraft_version'])]
 class Server extends Model
 {
     /** @use HasFactory<ServerFactory> */
     use HasFactory;
+
+    /** @var array<string, mixed> */
+    protected $attributes = ['software' => 'custom'];
 
     public const SLUG_PATTERN = '/^[a-z0-9]+(?:-[a-z0-9]+)*$/';
 
@@ -113,6 +119,7 @@ class Server extends Model
     {
         return [
             'is_public' => 'boolean',
+            'software' => Software::class,
             'eula_accepted_at' => 'datetime',
             'java_version' => 'integer',
             'idle_minutes' => 'integer',

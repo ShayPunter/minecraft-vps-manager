@@ -70,4 +70,16 @@ export type ServerDefinition = {
     subdomain: string | null;
     eula_accepted_at?: string | null;
     eula_accepted_by?: string | null;
+    software: SoftwareValue;
+    minecraft_version: string | null;
+};
+
+export type SoftwareValue = 'custom' | 'vanilla' | 'paper' | 'fabric';
+
+/** What App\Http\Controllers\Admin\ServerController::softwareOptions() sends (#5351). */
+export type SoftwareOptions = {
+    options: { value: SoftwareValue; label: string }[];
+    /** Newest first; empty when the source couldn't be reached. */
+    versions: Record<string, string[]>;
+    error: string | null;
 };

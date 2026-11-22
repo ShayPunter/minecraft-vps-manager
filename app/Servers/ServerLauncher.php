@@ -10,6 +10,8 @@ use App\Enums\RunStatus;
 use App\Jobs\PrepareServerRun;
 use App\Jobs\ProvisionServerRun;
 use App\Jobs\StopServerRun;
+use App\Minecraft\VersionSource;
+use App\Minecraft\VersionSourceException;
 use App\Models\Server;
 use App\Models\ServerRun;
 use App\Models\User;
@@ -50,6 +52,7 @@ class ServerLauncher
         private readonly Dns $dns,
         private readonly S3Transfers $s3,
         private readonly RunLog $log,
+        private readonly VersionSource $versions,
     ) {}
 
     /**
@@ -426,11 +429,28 @@ class ServerLauncher
             }
         }
 
+        // No saved world yet and a Vanilla/Paper/Fabric server (#5351): install it. The jars
+        // are looked up now, so Paper and the Fabric loader get their newest stable build.
+        // After the first stop the whole folder is saved, so later starts never reinstall.
+        $install = null;
+
+        if ($archive === null && $server->software->installs() && $server->minecraft_version !== null) {
+            try {
+                $install = $this->versions->plan($server->software, $server->minecraft_version);
+            } catch (VersionSourceException $e) {
+                Log::info("Run {$run->id}: couldn't look up the install, trying again: {$e->getMessage()}");
+                $this->log->append($run, 'prepare', "Couldn't look up the {$server->software->label()} {$server->minecraft_version} download yet, trying again: {$e->getMessage()}");
+                $this->retryPrepare($run);
+
+                return;
+            }
+        }
+
         // The log shipper (#5367): a fresh token on every attempt, only its hash kept.
         $shipper = RunLog::shipperFiles($server, $run, $this->log->issueToken($run));
 
         try {
-            $this->shell->putFiles($run->ipv4, WorldSync::prepareFiles($server, $archive, $storage, $downloadUrl) + $shipper, $run->ssh_private_key);
+            $this->shell->putFiles($run->ipv4, WorldSync::prepareFiles($server, $archive, $storage, $downloadUrl, $install) + $shipper, $run->ssh_private_key);
             $result = $this->shell->run($run->ipv4, WorldSync::PREPARE_COMMAND, (int) config('minecraft.prepare_timeout'), $run->ssh_private_key);
         } catch (RemoteShellException $e) {
             Log::info("Run {$run->id}: VPS not ready for the world yet, trying again: {$e->getMessage()}");
