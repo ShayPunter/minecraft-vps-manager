@@ -15,10 +15,13 @@ class FakeRemoteShell implements RemoteShell
 
     public function __construct(private readonly Repository $cache) {}
 
-    public function run(string $host, string $command, int $timeoutSeconds): ShellResult
+    public function run(string $host, string $command, int $timeoutSeconds, ?string $privateKey = null): ShellResult
     {
         $state = $this->state();
         $state['commands'][] = ['host' => $host, 'command' => $command];
+        // Which key logged in (so a test can check it was the run's), kept apart from
+        // `commands` so the existing assertions on host + command stay as they were.
+        $state['keys'][] = $privateKey;
         $this->cache->forever(self::KEY, $state);
 
         if ($state['unreachable'] !== null) {
@@ -54,13 +57,24 @@ class FakeRemoteShell implements RemoteShell
     }
 
     /**
-     * @return array{commands: list<array{host: string, command: string}>, exit: int, output: string, unreachable: string|null}
+     * The private key each command logged in with, in the same order as commands().
+     *
+     * @return list<string|null>
+     */
+    public function keys(): array
+    {
+        return $this->state()['keys'];
+    }
+
+    /**
+     * @return array{commands: list<array{host: string, command: string}>, keys: list<string|null>, exit: int, output: string, unreachable: string|null}
      */
     private function state(): array
     {
         $state = $this->cache->get(self::KEY);
+        $default = ['commands' => [], 'keys' => [], 'exit' => 0, 'output' => '', 'unreachable' => null];
 
-        /** @var array{commands: list<array{host: string, command: string}>, exit: int, output: string, unreachable: string|null} */
-        return is_array($state) ? $state : ['commands' => [], 'exit' => 0, 'output' => '', 'unreachable' => null];
+        /** @var array{commands: list<array{host: string, command: string}>, keys: list<string|null>, exit: int, output: string, unreachable: string|null} */
+        return is_array($state) ? [...$default, ...$state] : $default;
     }
 }

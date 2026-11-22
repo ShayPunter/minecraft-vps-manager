@@ -27,6 +27,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $last_players_at the last ping that counted a player
  * @property string|null $stop_reason idle, admin, starter, boot_timeout
  * @property CarbonImmutable|null $long_run_alerted_at
+ * @property string|null $ssh_private_key this run's OpenSSH private key, encrypted with APP_KEY; wiped once the VPS is gone (#5324)
+ * @property int|null $provider_ssh_key_id its public half at the provider
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read Server $server
@@ -34,6 +36,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class ServerRun extends Model
 {
+    /**
+     * Never in toArray()/JSON, so no page, log or API answer can carry the key.
+     *
+     * @var list<string>
+     */
+    protected $hidden = ['ssh_private_key'];
+
     /**
      * @return BelongsTo<Server, $this>
      */
@@ -72,6 +81,8 @@ class ServerRun extends Model
             'players_online' => 'integer',
             'last_players_at' => 'datetime',
             'long_run_alerted_at' => 'datetime',
+            'ssh_private_key' => 'encrypted',
+            'provider_ssh_key_id' => 'integer',
         ];
     }
 }

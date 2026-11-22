@@ -37,7 +37,41 @@ class Watchdog
         $this->failStuckStops();
         $this->retryFailedStops();
         $this->deleteOrphans();
+        $this->deleteOrphanKeys();
         $this->alertLongRuns();
+    }
+
+    /**
+     * Managed SSH keys no active run uses (#5324): left behind when the provider couldn't be
+     * reached as a run ended. A key labelled with an active run's id is kept, so a run that's
+     * still provisioning (key made, id not saved yet) isn't hit. Keys without the label, such
+     * as one Shay added by hand, are never touched.
+     */
+    private function deleteOrphanKeys(): void
+    {
+        try {
+            $keys = $this->cloud->managedSshKeys();
+        } catch (CloudException $e) {
+            Log::warning("SSH key sweep skipped: {$e->getMessage()}");
+
+            return;
+        }
+
+        $active = ServerRun::query()->active()->get(['id', 'provider_ssh_key_id']);
+        $knownKeyIds = $active->pluck('provider_ssh_key_id')->filter()->all();
+        $activeRunIds = $active->pluck('id')->all();
+
+        foreach ($keys as $key) {
+            if (in_array($key->id, $knownKeyIds, true) || ($key->runId() !== null && in_array($key->runId(), $activeRunIds, true))) {
+                continue;
+            }
+
+            try {
+                $this->cloud->deleteSshKey($key->id);
+            } catch (CloudException $e) {
+                Log::warning("Couldn't delete orphan SSH key {$key->id}: {$e->getMessage()}");
+            }
+        }
     }
 
     private function abandonSlowStarts(): void

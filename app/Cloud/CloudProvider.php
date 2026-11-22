@@ -18,12 +18,42 @@ interface CloudProvider
     /** Label holding the id of the app's Minecraft server a VPS belongs to. */
     public const SERVER_ID_LABEL = 'mvm-server-id';
 
+    /** Label holding the id of the run an SSH key was made for (#5324). */
+    public const RUN_ID_LABEL = 'mvm-run-id';
+
     /**
-     * Create and boot a VPS. Login is by the app's SSH key only: no root password.
+     * Create and boot a VPS. Login is by the SSH keys in the spec only: no root password.
+     * A spec without a key is refused before any request (Hetzner would email a root password).
      *
      * @throws CloudException
      */
     public function createServer(ServerSpec $spec): CloudServer;
+
+    /**
+     * Register a public key. The provider adds the managed-by label itself.
+     *
+     * @param  array<string, string>  $labels  extra labels
+     *
+     * @throws CloudException
+     */
+    public function createSshKey(string $name, string $publicKey, array $labels = []): CloudSshKey;
+
+    /**
+     * Delete an SSH key the app registered. Refuses (CloudException `not_managed`) one without
+     * the managed-by label. A key that's already gone counts as deleted.
+     *
+     * @throws CloudException
+     */
+    public function deleteSshKey(int $id): void;
+
+    /**
+     * Every SSH key with the managed-by label.
+     *
+     * @return list<CloudSshKey>
+     *
+     * @throws CloudException
+     */
+    public function managedSshKeys(): array;
 
     /**
      * The VPS with this id, or null when it no longer exists.

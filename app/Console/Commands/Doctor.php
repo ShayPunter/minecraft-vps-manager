@@ -7,22 +7,21 @@ use App\Cloud\CloudProvider;
 use App\Enums\Role;
 use App\Jobs\QueueHeartbeat;
 use App\Models\User;
+use App\Servers\SshKeyPair;
 use App\Support\Heartbeat;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use phpseclib3\Crypt\Common\PrivateKey;
-use phpseclib3\Crypt\PublicKeyLoader;
 use Throwable;
 
 /**
  * Checks a Forge install is ready to start real servers (#5285): Hetzner token (one
- * read-only call), the SSH key pair, the queue worker, the scheduler, an admin and where
+ * read-only call), SSH key making, the queue worker, the scheduler, an admin and where
  * alerts go. Prints what's missing and how to fix it; never prints a secret. Exit 1 when
  * anything fails, so it can gate a deploy too.
  */
 #[Signature('app:doctor {--wait=15 : Seconds to wait for the queue worker to run a test job}')]
-#[Description('Check the Hetzner token, SSH key, queue worker, scheduler and alerts')]
+#[Description('Check the Hetzner token, SSH keys, queue worker, scheduler and alerts')]
 class Doctor extends Command
 {
     /** @var list<array{string, string, string}> */
@@ -85,39 +84,18 @@ class Doctor extends Command
         }
     }
 
+    /**
+     * Each VPS gets a key pair the app makes itself (#5324): nothing to set up, but check PHP
+     * can make one here, since every start would fail without it.
+     */
     private function checkSshKeys(): void
     {
-        $publicPath = (string) config('services.hetzner.ssh_public_key_path');
-        $privatePath = (string) config('services.hetzner.ssh_private_key_path');
-        $make = 'Make the pair with: mkdir -p storage/app/private/ssh && ssh-keygen -t ed25519 -N "" -C mvm -f storage/app/private/ssh/id_ed25519';
-
-        if (! is_readable($publicPath) || ! is_readable($privatePath)) {
-            $missing = ! is_readable($publicPath) ? $publicPath : $privatePath;
-            $this->row('FAIL', 'SSH key', "Not readable: {$missing}. {$make}");
-
-            return;
-        }
-
         try {
-            $private = PublicKeyLoader::load((string) file_get_contents($privatePath));
-        } catch (Throwable) {
-            $this->row('FAIL', 'SSH key', "{$privatePath} isn't a private key the app can read (it needs no passphrase). {$make}");
-
-            return;
+            SshKeyPair::generate('mvm-doctor');
+            $this->row('OK', 'SSH keys', 'Made by the app for each VPS and deleted with it. Nothing to set up.');
+        } catch (Throwable $e) {
+            $this->row('FAIL', 'SSH keys', "The app can't make an ed25519 key pair here: {$e->getMessage()}");
         }
-
-        if (! $private instanceof PrivateKey) {
-            $this->row('FAIL', 'SSH key', "{$privatePath} is a public key. HETZNER_SSH_PRIVATE_KEY must point at the private half.");
-
-            return;
-        }
-
-        $fromPrivate = explode(' ', trim($private->getPublicKey()->toString('OpenSSH')))[1] ?? '';
-        $fromFile = explode(' ', trim((string) file_get_contents($publicPath)))[1] ?? null;
-
-        $fromPrivate !== '' && $fromPrivate === $fromFile
-            ? $this->row('OK', 'SSH key', 'Private and public halves match.')
-            : $this->row('FAIL', 'SSH key', "{$publicPath} isn't the public half of {$privatePath}.");
     }
 
     private function checkQueue(): void

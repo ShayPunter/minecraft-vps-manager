@@ -8,6 +8,7 @@ namespace App\Cloud;
 final readonly class ServerSpec
 {
     /**
+     * @param  list<int>  $sshKeyIds  provider ids of the keys that may log in as root (at least one)
      * @param  array<string, string>  $labels  extra labels
      */
     public function __construct(
@@ -15,6 +16,7 @@ final readonly class ServerSpec
         public string $serverType,
         public string $location,
         public int $minecraftServerId,
+        public array $sshKeyIds = [],
         public string $image = 'ubuntu-24.04',
         public ?string $userData = null,
         public array $labels = [],

@@ -5,51 +5,17 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Support\Heartbeat;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\File;
-use phpseclib3\Crypt\EC;
 use Tests\TestCase;
 
 class DoctorCommandTest extends TestCase
 {
     use RefreshDatabase;
 
-    private string $dir;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        $this->dir = sys_get_temp_dir().'/mvm-doctor-'.bin2hex(random_bytes(4));
-        File::ensureDirectoryExists($this->dir);
-    }
-
-    protected function tearDown(): void
-    {
-        File::deleteDirectory($this->dir);
-
-        parent::tearDown();
-    }
-
-    /**
-     * A throwaway ed25519 pair, written like ssh-keygen would.
-     */
-    private function keyPair(string $name = 'id_ed25519'): string
-    {
-        $key = EC::createKey('Ed25519');
-        file_put_contents("{$this->dir}/{$name}", $key->toString('OpenSSH'));
-        file_put_contents("{$this->dir}/{$name}.pub", $key->getPublicKey()->toString('OpenSSH', ['comment' => 'mvm'])."\n");
-
-        return "{$this->dir}/{$name}";
-    }
-
     private function ready(): void
     {
-        $private = $this->keyPair();
         config([
             'app.url' => 'https://minecraft.example.com',
             'services.hetzner.token' => 'test-token',
-            'services.hetzner.ssh_private_key_path' => $private,
-            'services.hetzner.ssh_public_key_path' => "{$private}.pub",
             'mail.default' => 'smtp',
         ]);
         User::factory()->admin()->create();
@@ -65,7 +31,7 @@ class DoctorCommandTest extends TestCase
 
         $this->artisan('app:doctor')
             ->expectsOutputToContain('Works (read-only call: 3 locations).')
-            ->expectsOutputToContain('Private and public halves match.')
+            ->expectsOutputToContain('Made by the app for each VPS and deleted with it.')
             ->expectsOutputToContain('Ran a test job on the database queue.')
             ->expectsOutputToContain('servers:watch ran')
             ->expectsOutputToContain('Ready to start servers.')
@@ -77,40 +43,18 @@ class DoctorCommandTest extends TestCase
         config([
             'app.url' => 'http://minecraft.example.com',
             'services.hetzner.token' => '',
-            'services.hetzner.ssh_private_key_path' => "{$this->dir}/missing",
-            'services.hetzner.ssh_public_key_path' => "{$this->dir}/missing.pub",
             'mail.default' => 'log',
         ]);
 
         $this->artisan('app:doctor')
             ->expectsOutputToContain("isn't https")
             ->expectsOutputToContain('HETZNER_TOKEN is empty')
-            ->expectsOutputToContain('ssh-keygen -t ed25519')
+            // No key to make by hand any more (#5324).
+            ->doesntExpectOutputToContain('ssh-keygen')
             ->expectsOutputToContain("servers:watch hasn't run yet.")
             ->expectsOutputToContain('No admin yet.')
             ->expectsOutputToContain('alert mails only reach the log')
             ->expectsOutputToContain('check(s) failed')
-            ->assertFailed();
-    }
-
-    public function test_a_mismatched_key_pair_fails(): void
-    {
-        $this->ready();
-        $other = $this->keyPair('other');
-        config(['services.hetzner.ssh_public_key_path' => "{$other}.pub"]);
-
-        $this->artisan('app:doctor')
-            ->expectsOutputToContain("isn't the public half of")
-            ->assertFailed();
-    }
-
-    public function test_the_public_key_given_as_the_private_one_fails(): void
-    {
-        $this->ready();
-        config(['services.hetzner.ssh_private_key_path' => config('services.hetzner.ssh_public_key_path')]);
-
-        $this->artisan('app:doctor')
-            ->expectsOutputToContain('is a public key')
             ->assertFailed();
     }
 

@@ -22,9 +22,11 @@ class FakeCloudProviderTest extends TestCase
     {
         $fake = $this->fake();
 
-        $server = $fake->createServer(new ServerSpec('mvm-one', 'cx43', 'fsn1', 3, userData: 'cloud-init'));
+        $key = $fake->createSshKey('mvm-one', 'ssh-ed25519 AAAA mvm-one');
+        $server = $fake->createServer(new ServerSpec('mvm-one', 'cx43', 'fsn1', 3, sshKeyIds: [$key->id], userData: 'cloud-init'));
 
         $this->assertSame('initializing', $server->status);
+        $this->assertSame([$key->id], $fake->rawServer($server->id)['ssh_keys'] ?? null);
         $this->assertNotNull($server->ipv4);
         $this->assertSame(3, $server->minecraftServerId());
         $this->assertSame('cloud-init', $fake->rawServer($server->id)['user_data'] ?? null);
@@ -39,6 +41,48 @@ class FakeCloudProviderTest extends TestCase
 
         // Deleting again is fine.
         $fake->deleteServer($server->id);
+    }
+
+    public function test_a_server_needs_an_existing_ssh_key(): void
+    {
+        $fake = $this->fake();
+
+        foreach ([[], [999]] as $keyIds) {
+            try {
+                $fake->createServer(new ServerSpec('mvm-one', 'cx43', 'fsn1', 3, sshKeyIds: $keyIds));
+                $this->fail('Expected a CloudException');
+            } catch (CloudException) {
+                $this->assertSame([], $fake->managedServers());
+            }
+        }
+    }
+
+    public function test_it_creates_lists_and_deletes_ssh_keys_but_never_unmanaged_ones(): void
+    {
+        $fake = $this->fake();
+
+        $key = $fake->createSshKey('mvm-a-1', "ssh-ed25519 AAAA mvm-a-1\n", [CloudProvider::RUN_ID_LABEL => '1']);
+        $handMade = $fake->addUnmanagedSshKey('shay-laptop');
+
+        $this->assertTrue($key->isManaged());
+        $this->assertSame(1, $key->runId());
+        $this->assertSame('ssh-ed25519 AAAA mvm-a-1', $fake->sshPublicKey($key->id));
+        $this->assertSame([$key->id], array_map(fn ($k) => $k->id, $fake->managedSshKeys()));
+
+        // Names are unique, as at Hetzner.
+        try {
+            $fake->createSshKey('mvm-a-1', 'ssh-ed25519 BBBB');
+            $this->fail('Expected a CloudException');
+        } catch (CloudException $e) {
+            $this->assertSame('uniqueness_error', $e->errorCode);
+        }
+
+        $fake->deleteSshKey($key->id);
+        $fake->deleteSshKey($key->id);
+        $this->assertSame([], $fake->managedSshKeys());
+
+        $this->expectException(CloudException::class);
+        $fake->deleteSshKey($handMade->id);
     }
 
     public function test_it_refuses_to_delete_servers_the_app_did_not_make(): void

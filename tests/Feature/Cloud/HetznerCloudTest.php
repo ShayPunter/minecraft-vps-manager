@@ -19,12 +19,25 @@ class HetznerCloudTest extends TestCase
 {
     private const API = 'https://api.hetzner.cloud/v1';
 
-    /** MD5 fingerprint of tests/fixtures/ssh/id_ed25519.pub, from `ssh-keygen -l -E md5`. */
-    private const FIXTURE_FINGERPRINT = '25:60:59:d7:45:23:5b:cb:d9:26:46:bd:94:e5:1d:3c';
-
-    private function client(?string $token = 'test-token', ?string $keyPath = null): HetznerCloud
+    private function client(?string $token = 'test-token'): HetznerCloud
     {
-        return new HetznerCloud($token, self::API, $keyPath ?? base_path('tests/fixtures/ssh/id_ed25519.pub'));
+        return new HetznerCloud($token, self::API);
+    }
+
+    /**
+     * @param  array<string, string>  $labels
+     * @return array<string, mixed>
+     */
+    private function sshKeyJson(int $id, array $labels = ['managed-by' => 'minecraft-vps-manager', 'mvm-run-id' => '12']): array
+    {
+        return [
+            'id' => $id,
+            'name' => "mvm-atm9-{$id}",
+            'fingerprint' => 'b7:2f:30:a0:2f:6c:58:6c:21:04:58:61:ba:06:3b:2f',
+            'public_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGmq mvm-atm9-12',
+            'labels' => $labels,
+            'created' => '2026-11-22T18:00:00+00:00',
+        ];
     }
 
     /**
@@ -47,11 +60,6 @@ class HetznerCloudTest extends TestCase
             'server_type' => ['name' => 'cx43'],
             'labels' => $labels,
         ];
-    }
-
-    private function noKeysYet(): array
-    {
-        return ['ssh_keys' => [], 'meta' => ['pagination' => ['page' => 1, 'per_page' => 25, 'previous_page' => null, 'next_page' => null, 'last_page' => 1, 'total_entries' => 0]]];
     }
 
     public function test_tests_get_the_fake_whatever_the_config_says(): void
@@ -77,18 +85,9 @@ class HetznerCloudTest extends TestCase
         $this->app['env'] = 'testing';
     }
 
-    public function test_the_fingerprint_matches_ssh_keygen(): void
-    {
-        $key = (string) file_get_contents(base_path('tests/fixtures/ssh/id_ed25519.pub'));
-
-        $this->assertSame(self::FIXTURE_FINGERPRINT, HetznerCloud::fingerprint($key));
-    }
-
-    public function test_creating_a_server_registers_the_ssh_key_and_labels_the_server(): void
+    public function test_creating_a_server_passes_its_keys_and_labels(): void
     {
         Http::fake([
-            self::API.'/ssh_keys?*' => Http::response($this->noKeysYet()),
-            self::API.'/ssh_keys' => Http::response(['ssh_key' => ['id' => 42, 'name' => 'minecraft-vps-manager', 'fingerprint' => self::FIXTURE_FINGERPRINT]], 201),
             self::API.'/servers' => Http::response([
                 'server' => $this->serverJson(4711),
                 'action' => ['id' => 13, 'command' => 'create_server', 'status' => 'running'],
@@ -102,6 +101,7 @@ class HetznerCloudTest extends TestCase
             serverType: 'cx43',
             location: 'fsn1',
             minecraftServerId: 7,
+            sshKeyIds: [42],
             userData: "#cloud-config\nruncmd: []\n",
             labels: ['managed-by' => 'someone-else', 'pack' => 'atm9'],
         ));
@@ -112,17 +112,12 @@ class HetznerCloudTest extends TestCase
         $this->assertTrue($server->isManaged());
         $this->assertSame(7, $server->minecraftServerId());
 
-        Http::assertSent(fn (Request $r) => $r->method() === 'GET'
-            && str_starts_with($r->url(), self::API.'/ssh_keys?')
-            && $r['fingerprint'] === self::FIXTURE_FINGERPRINT
-            && $r->hasHeader('Authorization', 'Bearer test-token'));
-
-        Http::assertSent(fn (Request $r) => $r->method() === 'POST'
-            && $r->url() === self::API.'/ssh_keys'
-            && str_starts_with((string) $r['public_key'], 'ssh-ed25519 ')
-            && $r['name'] === 'minecraft-vps-manager');
+        // One request: the key is the run's own, made beforehand (#5324), never looked up here.
+        Http::assertSentCount(1);
 
         Http::assertSent(function (Request $r) {
+            $this->assertTrue($r->hasHeader('Authorization', 'Bearer test-token'));
+
             if ($r->method() !== 'POST' || $r->url() !== self::API.'/servers') {
                 return false;
             }
@@ -141,35 +136,101 @@ class HetznerCloudTest extends TestCase
         });
     }
 
-    public function test_an_already_registered_key_is_reused(): void
+    public function test_a_server_without_an_ssh_key_is_refused_before_any_request(): void
     {
-        Http::fake([
-            self::API.'/ssh_keys?*' => Http::response(['ssh_keys' => [['id' => 99, 'name' => 'minecraft-vps-manager', 'fingerprint' => self::FIXTURE_FINGERPRINT]], 'meta' => []]),
-            self::API.'/servers' => Http::response(['server' => $this->serverJson(1), 'action' => []], 201),
-        ]);
-
-        $client = $this->client();
-        $client->createServer(new ServerSpec('a', 'cx43', 'fsn1', 1));
-        $client->createServer(new ServerSpec('b', 'cx43', 'fsn1', 2));
-
-        Http::assertNotSent(fn (Request $r) => $r->method() === 'POST' && $r->url() === self::API.'/ssh_keys');
-        // Looked up once, then remembered.
-        Http::assertSentCount(3);
-        Http::assertSent(fn (Request $r) => $r->url() === self::API.'/servers' && $r['ssh_keys'] === [99]);
-    }
-
-    public function test_a_missing_ssh_key_is_refused_before_any_request(): void
-    {
+        // Hetzner would set a root password and email it.
         Http::fake();
 
         try {
-            $this->client(keyPath: base_path('tests/fixtures/ssh/missing.pub'))->createServer(new ServerSpec('a', 'cx43', 'fsn1', 1));
+            $this->client()->createServer(new ServerSpec('a', 'cx43', 'fsn1', 1));
             $this->fail('Expected a CloudException');
         } catch (CloudException $e) {
             $this->assertSame('not_configured', $e->errorCode);
         }
 
         Http::assertNothingSent();
+    }
+
+    public function test_registering_an_ssh_key_labels_it(): void
+    {
+        Http::fake([
+            self::API.'/ssh_keys' => Http::response(['ssh_key' => $this->sshKeyJson(42)], 201),
+        ]);
+
+        $key = $this->client()->createSshKey('mvm-atm9-12', "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGmq mvm-atm9-12\n", [
+            'mvm-run-id' => '12',
+            'managed-by' => 'someone-else',
+        ]);
+
+        $this->assertSame(42, $key->id);
+        $this->assertTrue($key->isManaged());
+        $this->assertSame(12, $key->runId());
+
+        Http::assertSent(function (Request $r) {
+            $this->assertSame('POST', $r->method());
+            $this->assertSame('mvm-atm9-12', $r['name']);
+            $this->assertSame('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGmq mvm-atm9-12', $r['public_key']);
+            $this->assertSame(['mvm-run-id' => '12', 'managed-by' => 'minecraft-vps-manager'], $r['labels']);
+
+            return true;
+        });
+    }
+
+    public function test_deleting_a_managed_ssh_key(): void
+    {
+        Http::fake([
+            self::API.'/ssh_keys/42' => Http::sequence()
+                ->push(['ssh_key' => $this->sshKeyJson(42)])
+                ->push(null, 204),
+        ]);
+
+        $this->client()->deleteSshKey(42);
+
+        Http::assertSent(fn (Request $r) => $r->method() === 'DELETE' && $r->url() === self::API.'/ssh_keys/42');
+    }
+
+    public function test_a_key_the_app_did_not_make_is_never_deleted(): void
+    {
+        Http::fake([
+            self::API.'/ssh_keys/7' => Http::response(['ssh_key' => $this->sshKeyJson(7, labels: [])]),
+        ]);
+
+        try {
+            $this->client()->deleteSshKey(7);
+            $this->fail('Expected a CloudException');
+        } catch (CloudException $e) {
+            $this->assertSame('not_managed', $e->errorCode);
+        }
+
+        Http::assertNotSent(fn (Request $r) => $r->method() === 'DELETE');
+    }
+
+    public function test_deleting_a_key_that_is_already_gone_is_fine(): void
+    {
+        Http::fake([
+            self::API.'/ssh_keys/42' => Http::response(['error' => ['code' => 'not_found', 'message' => 'ssh_key not found']], 404),
+        ]);
+
+        $this->client()->deleteSshKey(42);
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_managed_ssh_keys_are_listed_by_label_and_filtered(): void
+    {
+        Http::fake([
+            self::API.'/ssh_keys?*' => Http::response([
+                // The second has no label: Hetzner wouldn't return it for the selector, but if it
+                // did, it still mustn't count as the app's.
+                'ssh_keys' => [$this->sshKeyJson(42), $this->sshKeyJson(43, labels: [])],
+                'meta' => ['pagination' => ['page' => 1, 'next_page' => null]],
+            ]),
+        ]);
+
+        $keys = $this->client()->managedSshKeys();
+
+        $this->assertSame([42], array_map(fn ($key) => $key->id, $keys));
+        Http::assertSent(fn (Request $r) => $r['label_selector'] === 'managed-by=minecraft-vps-manager');
     }
 
     public function test_a_missing_token_is_refused_before_any_request(): void
@@ -189,7 +250,6 @@ class HetznerCloudTest extends TestCase
     public function test_hetzner_errors_become_cloud_exceptions_with_the_code(): void
     {
         Http::fake([
-            self::API.'/ssh_keys?*' => Http::response(['ssh_keys' => [['id' => 99]], 'meta' => []]),
             self::API.'/servers' => Http::response(['error' => [
                 'code' => 'resource_limit_exceeded',
                 'message' => 'project limit exceeded',
@@ -198,7 +258,7 @@ class HetznerCloudTest extends TestCase
         ]);
 
         try {
-            $this->client()->createServer(new ServerSpec('a', 'cx43', 'fsn1', 1));
+            $this->client()->createServer(new ServerSpec('a', 'cx43', 'fsn1', 1, sshKeyIds: [99]));
             $this->fail('Expected a CloudException');
         } catch (CloudException $e) {
             $this->assertSame('resource_limit_exceeded', $e->errorCode);
