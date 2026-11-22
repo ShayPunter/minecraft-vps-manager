@@ -270,6 +270,37 @@ output. Run with the real binary:
   before every start; unticked, it leaves the folder's own eula.txt alone. prepare.sh also
   `chmod 0755`s top-level `*.sh` files, since the default start command is `./run.sh` and zips
   made on Windows lose the executable bit.
+- Software installs (#5351, `App\Minecraft`): `servers.software` (`Software` enum: custom,
+  vanilla, paper, fabric; default custom, so every older server and a form without the field
+  is custom) and `servers.minecraft_version`. `VersionSource`: `OnlineVersions` (Mojang's
+  version manifest + per-version JSON for the server jar's SHA-1 and `javaVersion`; PaperMC's
+  Fill API v3 `/versions` with the minimum Java, `/versions/{v}/builds` newest first, only
+  STABLE; Fabric meta for stable game/loader/installer, the installer's `.sha256` from Fabric's
+  Maven), lists cached an hour, a version's JSON a day, as arrays. Releases from 1.17 on only
+  (Mojang's list is cut there; Paper by Java ≥ 16 and no `-rc`/`-pre`; Fabric = its stable list
+  ∩ Mojang's). `FakeVersions` in testing/e2e (26.3, 26.2, 1.21.11; 26.x = Java 25;
+  `failWith()`/`reset()` in the cache). `ServerRequest::resolveInstall()` checks the version
+  is listed, maps the needed Java to the oldest offered one that's enough
+  (`Installer::javaFor`, null = refused) and writes `start_command` from the type's RAM
+  (`Installer::heapMb`: RAM minus max(1 GB, 20 %), 256 MB steps, ≥ 1 GB; `server.jar`, or
+  `fabric-server-launch.jar` for Fabric); the form's own start command/Java are excluded for
+  installed servers (`exclude_unless:software,custom`). Use `serverAttributes()`, not `safe()`.
+  The install runs in `ServerLauncher::prepare()` only when the server has **no current
+  archive**: `plan()` is resolved then (newest stable Paper build / Fabric loader), and a
+  `VersionSourceException` is logged on the run and retried on the next check (boot timeout
+  still applies). `WorldSync::prepareFiles(..., $install)` refuses an archive and a plan
+  together. prepare.sh `get`s each `Download` (https, hosts piston-data.mojang.com,
+  fill-data.papermc.io, maven.fabricmc.net only; URL/file/hash pattern-checked) with curl,
+  compares `sha1sum`/`sha256sum` (exit 24, file removed), Fabric then runs
+  `java -jar fabric-installer.jar server -mcversion V -loader L -dir $DIR` (it downloads the
+  loader libraries from Fabric's Maven itself; exit 25 without `fabric-server-launch.jar`).
+  The first stop saves the folder, so nothing reinstalls. Checked for real (Nov 22) against
+  the live APIs in an `ubuntu:24.04` container (openjdk-25-jre-headless from noble, stubbed
+  systemctl/cloud-init, start script run as the minecraft user): Vanilla 26.3, Paper 26.3
+  build 258 and Fabric 26.3 (loader 0.20.1) each reached "Done" and answered
+  `TcpMinecraftProbe` from a `php:8.4-cli` container on the same network; a wrong SHA-1 was
+  refused (exit 24, no jar left). E2E: `software.spec` (`software-admin@example.com`); older
+  specs that set a Java version pick Software → "My own start command" first.
 - DNS names (#5338, `App\Dns`): Admin → DNS (`DnsController`, `DnsSetting`, one row: domain,
   Cloudflare zone id, `api_token` encrypted + `$hidden`). Only `/zones/{id}/dns_records` is
   called, so an "Edit zone DNS" token for one zone is enough (no Zone Read for `/zones`).

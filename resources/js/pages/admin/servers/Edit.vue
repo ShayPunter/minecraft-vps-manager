@@ -9,12 +9,17 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { index } from '@/routes/admin/servers';
 import { edit as worldStorage } from '@/routes/admin/world-storage';
-import type { ServerCatalog, ServerDefinition } from '@/types/servers';
+import type {
+    ServerCatalog,
+    ServerDefinition,
+    SoftwareOptions,
+} from '@/types/servers';
 
 const props = defineProps<{
     server: ServerDefinition;
     catalog: ServerCatalog;
     javaVersions: number[];
+    software: SoftwareOptions;
     dnsDomain: string | null;
     world: {
         archives: {
@@ -88,8 +93,10 @@ defineOptions({
                 :errors="errors"
                 :catalog="catalog"
                 :java-versions="javaVersions"
+                :software="software"
                 :dns-domain="dnsDomain"
                 :server="props.server"
+                :has-saved-world="world.archives.some((a) => a.current)"
             />
 
             <div class="flex items-center gap-4">

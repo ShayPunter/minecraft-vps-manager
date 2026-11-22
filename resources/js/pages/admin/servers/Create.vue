@@ -5,11 +5,12 @@ import ServerFields from '@/components/admin/ServerFields.vue';
 import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
 import { create, index } from '@/routes/admin/servers';
-import type { ServerCatalog } from '@/types/servers';
+import type { ServerCatalog, SoftwareOptions } from '@/types/servers';
 
 defineProps<{
     catalog: ServerCatalog;
     javaVersions: number[];
+    software: SoftwareOptions;
     dnsDomain: string | null;
 }>();
 
@@ -41,6 +42,7 @@ defineOptions({
                 :errors="errors"
                 :catalog="catalog"
                 :java-versions="javaVersions"
+                :software="software"
                 :dns-domain="dnsDomain"
             />
 

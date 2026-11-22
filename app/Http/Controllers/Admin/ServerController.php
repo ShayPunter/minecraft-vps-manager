@@ -6,6 +6,9 @@ use App\Dns\Dns;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\ServerStopController;
 use App\Http\Requests\Admin\ServerRequest;
+use App\Minecraft\Software;
+use App\Minecraft\VersionSource;
+use App\Minecraft\VersionSourceException;
 use App\Models\Server;
 use App\Models\WorldArchive;
 use App\Servers\ServerCatalog;
@@ -39,12 +42,13 @@ class ServerController extends Controller
             'catalog' => $catalog->formOptions(),
             'javaVersions' => config('minecraft.java_versions'),
             'dnsDomain' => app(Dns::class)->saved()?->domain,
+            'software' => $this->softwareOptions(),
         ]);
     }
 
     public function store(ServerRequest $request): RedirectResponse
     {
-        $server = Server::query()->create($request->safe()->except('eula'));
+        $server = Server::query()->create($request->serverAttributes());
         $this->recordEula($request, $server);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => "Created {$server->name}."]);
@@ -63,13 +67,15 @@ class ServerController extends Controller
 
         return Inertia::render('admin/servers/Edit', [
             'server' => [
-                ...$server->only(['id', 'name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain']),
+                ...$server->only(['id', 'name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'minecraft_version']),
+                'software' => $server->software->value,
                 'eula_accepted_at' => $server->eula_accepted_at?->toIso8601String(),
                 'eula_accepted_by' => $server->eulaAcceptor?->name,
             ],
             'dnsDomain' => app(Dns::class)->saved()?->domain,
             'catalog' => $catalog->formOptions(),
             'javaVersions' => config('minecraft.java_versions'),
+            'software' => $this->softwareOptions(),
             'world' => [
                 'archives' => $server->worldArchives()->with('uploader:id,name')->orderByDesc('id')->get()
                     ->map(fn (WorldArchive $archive): array => [
@@ -92,12 +98,40 @@ class ServerController extends Controller
 
     public function update(ServerRequest $request, Server $server): RedirectResponse
     {
-        $server->update($request->safe()->except('eula'));
+        $server->update($request->serverAttributes());
         $this->recordEula($request, $server);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => "Saved {$server->name}. Changes apply from the next start."]);
 
         return to_route('admin.servers.index');
+    }
+
+    /**
+     * The Software choices and each one's versions, newest first (#5351). If a source can't be
+     * reached its list is empty and the form says why; custom servers still save.
+     *
+     * @return array{options: list<array{value: string, label: string}>, versions: array<string, list<string>>, error: string|null}
+     */
+    private function softwareOptions(): array
+    {
+        $source = app(VersionSource::class);
+        $versions = [];
+        $error = null;
+
+        foreach (Software::installable() as $software) {
+            try {
+                $versions[$software->value] = $source->versions($software);
+            } catch (VersionSourceException $e) {
+                $versions[$software->value] = [];
+                $error ??= $e->getMessage();
+            }
+        }
+
+        return [
+            'options' => array_map(fn (Software $software): array => ['value' => $software->value, 'label' => $software->label()], [...Software::installable(), Software::Custom]),
+            'versions' => $versions,
+            'error' => $error,
+        ];
     }
 
     /**

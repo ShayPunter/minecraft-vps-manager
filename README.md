@@ -86,9 +86,22 @@ one before the VPS is deleted. Servers can't start until world storage is set up
 ### How a start works
 
 Before the first start, tick **I accept the Minecraft EULA for this server** in the server's
-settings: Minecraft won't run without it, and the app then writes `eula.txt` for you. Set the
-Java version the server jar needs (Paper and vanilla 26.x need Java 25). A `run.sh` at the top
-of the world zip is made executable, so `./run.sh` works as the start command.
+settings: Minecraft won't run without it, and the app then writes `eula.txt` for you.
+
+Pick the **Software**: **Vanilla**, **Paper** or **Fabric** at a Minecraft version (releases
+from 1.17 on, newest first, from Mojang's, PaperMC's and Fabric's own version lists), or
+**My own start command** for a modpack server pack or a world you upload. For Vanilla, Paper
+and Fabric the app sets the Java version (what Mojang or PaperMC say the version needs) and
+the start command, with the memory flags sized to the server type's RAM. The first start of
+a server with no saved world installs it on the VPS: the server jar (Paper's newest stable
+build; for Fabric the vanilla jar plus Fabric's installer, which sets up the newest stable
+loader), each checked against the SHA-1 or SHA-256 its source publishes. The first stop then
+saves the whole folder like any world, so later starts download that and never reinstall.
+Changing the version afterwards doesn't touch a saved world.
+
+With your own start command, set the Java version the server jar needs (Paper and vanilla
+26.x need Java 25). A `run.sh` at the top of the world zip is made executable, so `./run.sh`
+works as the start command.
 
 **Admin → Servers → Log** shows what the VPS and Minecraft printed, live while it starts or
 runs, and still there after the VPS is deleted (14 days). If a server never comes online, the

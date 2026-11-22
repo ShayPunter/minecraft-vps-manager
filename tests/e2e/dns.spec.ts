@@ -67,6 +67,7 @@ test('an admin sets up DNS, gives a server a name and players see the name while
     await page.goto('/admin/servers/create');
     await page.getByLabel('Name').fill('Lobby Server');
     await page.getByLabel('Slug').fill('lobby-server');
+    await page.getByLabel('Software').selectOption('custom');
     await page.getByLabel('Java version').selectOption('21');
     await page.getByLabel('Subdomain (optional)').fill('Play.Lobby');
     await expect(page.locator('[data-test="subdomain-hint"]')).toContainText(

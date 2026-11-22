@@ -7,15 +7,52 @@ import type {
     ServerCatalog,
     ServerDefinition,
     ServerTypeOption,
+    SoftwareOptions,
+    SoftwareValue,
 } from '@/types/servers';
 
 const props = defineProps<{
     errors: Record<string, string | undefined>;
     catalog: ServerCatalog;
     javaVersions: number[];
+    software: SoftwareOptions;
     dnsDomain?: string | null;
     server?: ServerDefinition;
+    hasSavedWorld?: boolean;
 }>();
+
+// What it runs (#5351). New servers default to Vanilla at the newest release, unless the
+// version lists couldn't be loaded; existing servers keep what they have.
+const chosen = ref<SoftwareValue>(
+    props.server?.software ??
+        ((props.software.versions.vanilla ?? []).length > 0
+            ? 'vanilla'
+            : 'custom'),
+);
+const versionsHere = computed(
+    () => props.software.versions[chosen.value] ?? [],
+);
+const minecraftVersion = ref(
+    props.server?.minecraft_version ?? versionsHere.value[0] ?? '',
+);
+const installs = computed(() => chosen.value !== 'custom');
+
+function chooseSoftware(value: SoftwareValue): void {
+    chosen.value = value;
+
+    if (!versionsHere.value.includes(minecraftVersion.value)) {
+        minecraftVersion.value = versionsHere.value[0] ?? '';
+    }
+}
+
+// The saved server's own command is only shown while the choice is still what it saved.
+const savedInstallCommand = computed(() =>
+    props.server &&
+    props.server.software === chosen.value &&
+    props.server.minecraft_version === minecraftVersion.value
+        ? props.server.start_command
+        : null,
+);
 
 const subdomain = ref(props.server?.subdomain ?? '');
 
@@ -226,6 +263,87 @@ const currentTypeRetired = computed(
     </div>
 
     <div class="grid gap-2">
+        <Label for="software">Software</Label>
+        <select
+            id="software"
+            name="software"
+            :class="selectClass"
+            @change="
+                chooseSoftware(
+                    ($event.target as HTMLSelectElement).value as SoftwareValue,
+                )
+            "
+        >
+            <option
+                v-for="option in props.software.options"
+                :key="option.value"
+                :value="option.value"
+                :selected="option.value === chosen"
+            >
+                {{ option.label }}
+            </option>
+        </select>
+        <p
+            v-if="props.software.error"
+            class="text-sm text-destructive"
+            data-test="software-error"
+        >
+            {{ props.software.error }} Vanilla, Paper and Fabric need it; your
+            own start command still works.
+        </p>
+        <InputError :message="errors.software" />
+    </div>
+
+    <div v-if="installs" class="grid gap-2">
+        <Label for="minecraft_version">Minecraft version</Label>
+        <select
+            v-if="versionsHere.length > 0"
+            id="minecraft_version"
+            name="minecraft_version"
+            :class="selectClass"
+            @change="
+                minecraftVersion = ($event.target as HTMLSelectElement).value
+            "
+        >
+            <option
+                v-for="(version, i) in versionsHere"
+                :key="version"
+                :value="version"
+                :selected="version === minecraftVersion"
+            >
+                {{ version }}{{ i === 0 ? ' (latest)' : '' }}
+            </option>
+        </select>
+        <Input
+            v-else
+            id="minecraft_version"
+            v-model="minecraftVersion"
+            name="minecraft_version"
+            required
+            autocomplete="off"
+        />
+        <p class="text-sm text-muted-foreground" data-test="install-hint">
+            <template v-if="hasSavedWorld">
+                This server has a saved world, so starts use that. Changing the
+                version here doesn't reinstall it.
+            </template>
+            <template v-else>
+                The first start installs it (the jar is checked against the hash
+                its source publishes) and the first stop saves the whole folder,
+                so later starts don't reinstall.
+            </template>
+            Java and the memory flags follow the version and the server
+            type<template v-if="savedInstallCommand"
+                >:
+                <span class="font-mono" data-test="install-command">{{
+                    savedInstallCommand
+                }}</span></template
+            >.
+        </p>
+        <InputError :message="errors.minecraft_version" />
+    </div>
+
+    <div v-if="!installs" class="grid gap-2">
         <Label for="start_command">Start command</Label>
         <Input
             id="start_command"
@@ -241,7 +359,7 @@ const currentTypeRetired = computed(
         <InputError :message="errors.start_command" />
     </div>
 
-    <div class="grid gap-2">
+    <div v-if="!installs" class="grid gap-2">
         <Label for="java_version">Java version</Label>
         <select id="java_version" name="java_version" :class="selectClass">
             <option

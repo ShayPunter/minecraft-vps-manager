@@ -60,5 +60,12 @@ class E2ESeeder extends Seeder
             'email' => 'log-admin@example.com',
             'created_at' => now()->subYear(),
         ]);
+
+        // software.spec (#5351), its own admin for the same reason.
+        User::factory()->admin()->create([
+            'name' => 'Pat Paper',
+            'email' => 'software-admin@example.com',
+            'created_at' => now()->subYear(),
+        ]);
     }
 }

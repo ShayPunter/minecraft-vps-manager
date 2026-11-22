@@ -27,6 +27,7 @@ test('an admin accepts the EULA, starts a server and reads its log', async ({
     await page.goto('/admin/servers/create');
     await page.getByLabel('Name').fill('Paper Logs');
     await page.getByLabel('Slug').fill('paper-logs');
+    await page.getByLabel('Software').selectOption('custom');
     await page.getByLabel('Java version').selectOption('25');
     await page
         .getByLabel('I accept the Minecraft EULA for this server')
