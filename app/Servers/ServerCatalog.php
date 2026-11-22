@@ -14,7 +14,8 @@ use Illuminate\Support\Facades\Cache;
  */
 class ServerCatalog
 {
-    private const CACHE_KEY = 'mvm:catalog';
+    // v2: ServerType gained category, hourly prices and per-location retirement (#5321).
+    private const CACHE_KEY = 'mvm:catalog:v2';
 
     /** @var array{types: list<ServerType>, locations: list<Location>}|null */
     private ?array $loaded = null;
@@ -78,12 +79,12 @@ class ServerCatalog
         $bestPrice = INF;
 
         foreach ($this->types() as $type) {
-            if ($type->deprecated || $location === null || ! $type->availableIn($location)
+            if ($location === null || ! $type->availableIn($location)
                 || $type->memoryGb < (float) config('minecraft.default_memory_gb')) {
                 continue;
             }
 
-            $price = (float) $type->monthlyGrossPrices[$location];
+            $price = (float) $type->monthlyPrice($location);
 
             if ($price < $bestPrice) {
                 $best = $type->name;
@@ -103,11 +104,17 @@ class ServerCatalog
     {
         try {
             return [
+                // Only types that can still be ordered somewhere; the form picks the ones for its location (#5321).
                 'types' => array_map(fn (ServerType $type): array => [
                     'name' => $type->name,
-                    'label' => sprintf('%s · %d vCPU · %s GB RAM · %d GB disk%s', $type->description, $type->cores, rtrim(rtrim(number_format($type->memoryGb, 1), '0'), '.'), $type->diskGb, $type->cpuType === 'dedicated' ? ' · dedicated' : ''),
-                    'prices' => array_map(fn (string $price): string => '€'.number_format((float) $price, 2).'/month', $type->monthlyGrossPrices),
-                ], array_values(array_filter($this->types(), fn (ServerType $type): bool => ! $type->deprecated))),
+                    'label' => sprintf('%s · %d vCPU%s · %s GB RAM · %d GB disk', $type->description, $type->cores, $type->architecture === 'arm' ? ' (Arm)' : '', rtrim(rtrim(number_format($type->memoryGb, 1), '0'), '.'), $type->diskGb),
+                    'group' => $type->category,
+                    'prices' => array_map(fn (array $price): array => [
+                        'hourly' => '€'.number_format((float) $price['hourly'], 4).'/hour',
+                        'monthly' => '€'.number_format((float) $price['monthly'], 2).'/month',
+                        'sort' => (float) $price['monthly'],
+                    ], $type->grossPrices),
+                ], array_values(array_filter($this->types(), fn (ServerType $type): bool => $type->grossPrices !== []))),
                 'locations' => array_map(fn (Location $location): array => [
                     'name' => $location->name,
                     'label' => "{$location->city}, {$location->country} ({$location->name})",

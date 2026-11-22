@@ -87,12 +87,52 @@ class HetznerCloud implements CloudProvider
     {
         return array_map(function (mixed $type): ServerType {
             $type = $this->object($type);
+            $cpuType = (string) ($type['cpu_type'] ?? 'shared');
+            $architecture = (string) ($type['architecture'] ?? 'x86');
+
+            // Since Sep 2025 deprecation is per location (`locations[].deprecation`); the old
+            // type-wide `deprecated` was removed on 2 Nov 2026 (#5321). A location missing from
+            // `locations` doesn't offer the type. Older answers without `locations` fall back to
+            // the type-wide `deprecation`.
+            $hasLocations = array_key_exists('locations', $type);
+            $offered = [];
+            $retired = [];
+
+            foreach ($this->list($type['locations'] ?? []) as $location) {
+                $location = $this->object($location);
+                $name = (string) ($location['name'] ?? '');
+
+                if (($location['deprecation'] ?? null) !== null) {
+                    $retired[] = $name;
+                } else {
+                    $offered[] = $name;
+                }
+            }
+
+            $retiredEverywhere = ! $hasLocations && (($type['deprecation'] ?? null) !== null || (bool) ($type['deprecated'] ?? false));
             $prices = [];
 
             foreach ($this->list($type['prices'] ?? []) as $price) {
                 $price = $this->object($price);
-                $prices[(string) $price['location']] = (string) ($this->object($price['price_monthly'] ?? [])['gross'] ?? '');
+                $location = (string) $price['location'];
+
+                if ($retiredEverywhere) {
+                    $retired[] = $location;
+
+                    continue;
+                }
+
+                if ($hasLocations && ! in_array($location, $offered, true)) {
+                    continue;
+                }
+
+                $prices[$location] = [
+                    'monthly' => (string) ($this->object($price['price_monthly'] ?? [])['gross'] ?? ''),
+                    'hourly' => (string) ($this->object($price['price_hourly'] ?? [])['gross'] ?? ''),
+                ];
             }
+
+            $category = trim((string) ($type['category'] ?? ''));
 
             return new ServerType(
                 name: (string) $type['name'],
@@ -100,10 +140,11 @@ class HetznerCloud implements CloudProvider
                 cores: (int) ($type['cores'] ?? 0),
                 memoryGb: (float) ($type['memory'] ?? 0),
                 diskGb: (int) ($type['disk'] ?? 0),
-                cpuType: (string) ($type['cpu_type'] ?? 'shared'),
-                architecture: (string) ($type['architecture'] ?? 'x86'),
-                deprecated: (bool) ($type['deprecated'] ?? false) || ($type['deprecation'] ?? null) !== null,
-                monthlyGrossPrices: $prices,
+                cpuType: $cpuType,
+                architecture: $architecture,
+                category: $category !== '' ? $category : ($cpuType === 'dedicated' ? 'Dedicated vCPU' : 'Shared vCPU'),
+                grossPrices: $prices,
+                retiredIn: array_values(array_unique($retired)),
             );
         }, $this->paginate('/server_types', 'server_types'));
     }

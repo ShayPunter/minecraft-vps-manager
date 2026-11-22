@@ -57,7 +57,23 @@ class AdminServerTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->component('admin/servers/Create')
                 ->where('catalog.defaults', ['server_type' => 'cx33', 'location' => 'fsn1'])
-                ->has('catalog.types', 3)
+                // cpx21 is retired everywhere, so it isn't offered (#5321).
+                ->has('catalog.types', 5)
+                ->where('catalog.types.1', [
+                    'name' => 'cx33',
+                    'label' => 'CX33 · 4 vCPU · 8 GB RAM · 80 GB disk',
+                    'group' => 'Shared vCPU',
+                    'prices' => [
+                        'fsn1' => ['hourly' => '€0.0104/hour', 'monthly' => '€6.49/month', 'sort' => 6.49],
+                        'nbg1' => ['hourly' => '€0.0104/hour', 'monthly' => '€6.49/month', 'sort' => 6.49],
+                        'hel1' => ['hourly' => '€0.0104/hour', 'monthly' => '€6.49/month', 'sort' => 6.49],
+                    ],
+                ])
+                ->where('catalog.types.2.label', 'CAX31 · 8 vCPU (Arm) · 16 GB RAM · 160 GB disk')
+                ->where('catalog.types.3.group', 'Dedicated vCPU')
+                // cx53 is retired in Germany: only Helsinki's price is sent.
+                ->where('catalog.types.4.name', 'cx53')
+                ->where('catalog.types.4.prices', fn ($prices): bool => array_keys(collect($prices)->all()) === ['hel1'])
                 ->has('catalog.locations', 3)
                 ->where('catalog.error', null)
                 ->where('javaVersions', [17, 21, 25]));
@@ -118,6 +134,35 @@ class AdminServerTest extends TestCase
             ->assertSessionHasErrors('icon_url');
 
         $this->assertSame(0, Server::query()->count());
+    }
+
+    public function test_a_retired_type_is_refused_where_it_is_retired(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)->post('/admin/servers', $this->valid(['server_type' => 'cpx21', 'location' => 'fsn1']))
+            ->assertSessionHasErrors(['server_type' => 'CPX21 is no longer offered in fsn1. Pick another type.']);
+        $this->actingAs($admin)->post('/admin/servers', $this->valid(['server_type' => 'cx53', 'location' => 'nbg1']))
+            ->assertSessionHasErrors(['server_type' => 'CX53 is no longer offered in nbg1. Pick another type.']);
+        $this->assertSame(0, Server::query()->count());
+
+        $this->actingAs($admin)->post('/admin/servers', $this->valid(['server_type' => 'cx53', 'location' => 'hel1']))
+            ->assertSessionHasNoErrors();
+        $this->assertSame(1, Server::query()->count());
+    }
+
+    public function test_a_server_keeps_its_retired_type_until_it_is_edited(): void
+    {
+        $admin = User::factory()->admin()->create();
+        Server::factory()->create(['slug' => 'old', 'server_type' => 'cpx21', 'location' => 'fsn1']);
+
+        $this->actingAs($admin)->get('/admin/servers/old/edit')
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('server.server_type', 'cpx21'));
+
+        $this->actingAs($admin)->put('/admin/servers/old', $this->valid(['slug' => 'old', 'server_type' => 'cpx21']))
+            ->assertSessionHasErrors(['server_type' => 'CPX21 is no longer offered in fsn1. Pick another type.']);
+        $this->actingAs($admin)->put('/admin/servers/old', $this->valid(['slug' => 'old', 'server_type' => 'cx33']))
+            ->assertSessionHasNoErrors();
     }
 
     public function test_the_start_command_must_be_one_line(): void

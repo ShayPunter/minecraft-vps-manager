@@ -95,6 +95,8 @@ class ServerRequest extends FormRequest
                     $validator->errors()->add('location', 'Pick a location from the list.');
                 } elseif ($type === null) {
                     $validator->errors()->add('server_type', 'Pick a server type from the list.');
+                } elseif ($type->retiredIn($location)) {
+                    $validator->errors()->add('server_type', "{$type->description} is no longer offered in {$location}. Pick another type.");
                 } elseif (! $type->availableIn($location)) {
                     $validator->errors()->add('server_type', "{$type->description} isn't available in {$location}.");
                 }
