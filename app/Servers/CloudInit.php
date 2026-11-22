@@ -80,6 +80,18 @@ class CloudInit
         return 'systemctl stop '.$unit.'; r=$(systemctl show -p Result --value '.$unit.'); sync; echo "result=$r"; [ "$r" = success ]';
     }
 
+    /**
+     * How many times systemd has restarted Minecraft since the VPS booted (#5376), as a bare number.
+     */
+    public static function restartsCommand(Server $server): string
+    {
+        if (preg_match(Server::SLUG_PATTERN, $server->slug) !== 1) {
+            throw new InvalidArgumentException("Refusing a restart check for slug [{$server->slug}].");
+        }
+
+        return 'systemctl show -p NRestarts --value '.self::unitName($server);
+    }
+
     public static function unitName(Server $server): string
     {
         return "minecraft-{$server->slug}.service";

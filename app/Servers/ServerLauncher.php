@@ -14,6 +14,7 @@ use App\Minecraft\VersionSource;
 use App\Minecraft\VersionSourceException;
 use App\Models\Server;
 use App\Models\ServerRun;
+use App\Models\ServerRunLog;
 use App\Models\User;
 use App\WorldStorage\Archives;
 use App\WorldStorage\S3Transfers;
@@ -248,6 +249,71 @@ class ServerLauncher
         }
 
         $run->save();
+
+        // Minecraft keeps crashing and systemd keeps restarting it (#5376): no point waiting
+        // for the boot timeout, every minute of it is paid for. (A starting run gets here only
+        // once it's set up: the block above returns until then.)
+        if ($run->status === RunStatus::Starting) {
+            $restarts = $this->restartsSoFar($run);
+            $limit = (int) config('minecraft.crash_loop_restarts');
+
+            if ($restarts >= $limit) {
+                $this->giveUpOnCrashLoop($run, $restarts);
+            }
+        }
+    }
+
+    /**
+     * How often systemd has restarted Minecraft on this run's VPS: from the log the VPS sends
+     * (systemd's "restart counter is at N"), or, when no Minecraft lines have arrived a while
+     * after setup (the shipper isn't running), straight from systemd over SSH, once a minute.
+     */
+    private function restartsSoFar(ServerRun $run): int
+    {
+        $line = ServerRunLog::query()
+            ->where('server_run_id', $run->id)
+            ->where('source', 'minecraft')
+            ->where('line', 'like', '%Scheduled restart job, restart counter is at %')
+            ->orderByDesc('id')
+            ->value('line');
+
+        if (is_string($line) && preg_match('/restart counter is at (\d+)/', $line, $m) === 1) {
+            return (int) $m[1];
+        }
+
+        // Only called once prepared_at is set (advance()).
+        $quiet = $run->prepared_at?->lte(now()->subSeconds(90)) === true
+            && ! ServerRunLog::query()->where('server_run_id', $run->id)->where('source', 'minecraft')->exists();
+
+        if (! $quiet || $run->ipv4 === null || ! Cache::add("mvm:restart-check:{$run->id}", 1, 60)) {
+            return 0;
+        }
+
+        try {
+            $result = $this->shell->run($run->ipv4, CloudInit::restartsCommand($run->server), 20, $run->ssh_private_key);
+        } catch (RemoteShellException $e) {
+            Log::info("Run {$run->id}: couldn't ask systemd how often Minecraft restarted: {$e->getMessage()}");
+
+            return 0;
+        }
+
+        return $result->succeeded() && preg_match('/^\s*(\d+)\s*$/', $result->output, $m) === 1 ? (int) $m[1] : 0;
+    }
+
+    private function giveUpOnCrashLoop(ServerRun $run, int $restarts): void
+    {
+        $error = "Minecraft crashed and was restarted {$restarts} times while starting, so the VPS was deleted instead of waiting for the boot timeout.";
+
+        try {
+            $this->abandon($run, $error, 'crash_loop');
+        } catch (CloudException $e) {
+            // The boot timeout tries again later.
+            Log::warning("Run {$run->id}: couldn't delete the VPS of a crash-looping start: {$e->getMessage()}");
+
+            return;
+        }
+
+        $this->alerter->send("{$run->server->name} didn't start", (string) $run->error);
     }
 
     /**
@@ -335,7 +401,7 @@ class ServerLauncher
      *
      * @throws CloudException when the provider won't delete it (the run stays as it was, for the next check)
      */
-    public function abandon(ServerRun $run, string $error): void
+    public function abandon(ServerRun $run, string $error, string $reason = 'boot_timeout'): void
     {
         if ($run->provider_server_id !== null) {
             // The VPS (and Minecraft's log on it) is about to go: keep its last lines (#5367).
@@ -345,7 +411,7 @@ class ServerLauncher
 
         $cause = $this->log->diagnose($run);
 
-        $run->stop_reason = 'boot_timeout';
+        $run->stop_reason = $reason;
         $this->fail($run, $cause !== null ? "{$error} Likely cause: {$cause}" : $error);
     }
 
