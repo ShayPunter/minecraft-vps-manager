@@ -43,7 +43,9 @@ async function stopServer(page: Page, name: string, slug: string) {
     await expect(row).toContainText('Online');
     await row.getByRole('button', { name: `Stop ${name}` }).click();
     await expect(
-        page.getByText(`Stopped ${name}. The VPS is deleted.`),
+        page.getByText(
+            `Stopped ${name}. The world is saved and the VPS is deleted.`,
+        ),
     ).toBeVisible();
     await expect(row).toContainText('Stopped');
 }
@@ -96,6 +98,14 @@ test('an admin adds a server, a player starts it and sees it come online', async
     await expect(
         card.getByRole('button', { name: 'Start Friends Modpack' }),
     ).toHaveCount(0);
+    // The watchdog's ping: nobody on yet, and when it will stop by itself.
+    await expect(card.locator('[data-test="server-players"]')).toHaveText(
+        /Nobody on\. It stops after 15 minutes with nobody on\.|Checking who's on…/,
+    );
+    // The player started it, so they may stop it.
+    await expect(
+        card.getByRole('button', { name: 'Stop Friends Modpack' }),
+    ).toBeVisible();
 
     // Players can't reach the servers admin.
     const response = await player.request.get('/admin/servers');
@@ -126,8 +136,51 @@ test('a guest starts a public server from the home page', async ({
         'Online',
         { timeout: 20_000 },
     );
+    // Guests can start a public server, but only admins can stop it.
+    await expect(
+        card.getByRole('button', { name: 'Stop Open World' }),
+    ).toHaveCount(0);
     await guestContext.close();
 
     // Stop it again so later specs start under the cap.
     await stopServer(page, 'Open World', 'open-world');
+});
+
+test('the player who started a server stops it from the dashboard', async ({
+    page,
+    browser,
+}) => {
+    await logIn(page, 'admin@example.com');
+    await createServer(page, 'Weekend Survival', 'weekend-survival', false);
+
+    // The idle setting is on the form, with the default.
+    await page.goto('/admin/servers');
+    await page.getByRole('link', { name: 'Edit Weekend Survival' }).click();
+    await expect(
+        page.getByLabel('Stop after (minutes with nobody on)'),
+    ).toHaveValue('15');
+
+    const playerContext = await browser.newContext();
+    const player = await playerContext.newPage();
+    await logIn(player, 'starter@example.com');
+    const card = player.locator('[data-test="server-weekend-survival"]');
+    await card.getByRole('button', { name: 'Start Weekend Survival' }).click();
+    await expect(card.locator('[data-test="server-status"]')).toHaveText(
+        'Online',
+        { timeout: 20_000 },
+    );
+
+    await card.getByRole('button', { name: 'Stop Weekend Survival' }).click();
+    await expect(
+        player.getByText(
+            'Stopped Weekend Survival. The world is saved and the VPS is deleted.',
+        ),
+    ).toBeVisible();
+    await expect(card.locator('[data-test="server-status"]')).toHaveText(
+        'Stopped',
+    );
+    await expect(
+        card.getByRole('button', { name: 'Start Weekend Survival' }),
+    ).toBeVisible();
+    await playerContext.close();
 });

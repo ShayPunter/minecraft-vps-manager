@@ -32,6 +32,7 @@ class AdminServerTest extends TestCase
             'location' => 'fsn1',
             'start_command' => './run.sh',
             'java_version' => '17',
+            'idle_minutes' => '15',
             ...$overrides,
         ];
     }
