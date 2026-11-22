@@ -85,5 +85,11 @@ class SftpIntegrationTest extends TestCase
 
         $this->assertFalse($result->ok);
         $this->assertStringNotContainsString('definitely-wrong-pw', $result->message);
+        // Reported as a refused sign-in, not a write failure (#5348).
+        $this->assertStringContainsString('but it refused to sign in user', $result->message);
+        $this->assertStringContainsString('It accepts: ', $result->message);
+        $this->assertStringContainsString('password', $result->message);
+        $this->assertStringNotContainsString("couldn't write", $result->message);
+        $this->assertNotNull($result->hostKey);
     }
 }
