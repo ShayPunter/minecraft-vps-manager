@@ -20,6 +20,8 @@ return [
     // Watchdog (#5283). Idle minutes before a stop are set per server (default 15).
     // A run that isn't online this long after Start is deleted and marked failed.
     'boot_timeout_minutes' => (int) (env('MVM_BOOT_TIMEOUT_MINUTES') ?: 20),
+    // A start is given up as soon as systemd has restarted a crashing Minecraft this often (#5376).
+    'crash_loop_restarts' => 3,
     // Alert once when a run has been up longer than this (#5276: 8 hours).
     'max_run_hours' => (int) (env('MVM_MAX_RUN_HOURS') ?: 8),
     // A stop still "stopping" after this long (the queue worker died) becomes stop_failed.

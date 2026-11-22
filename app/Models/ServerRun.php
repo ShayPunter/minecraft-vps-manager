@@ -26,7 +26,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable|null $ended_at
  * @property int|null $players_online what the last server-list ping said (null: no answer)
  * @property CarbonImmutable|null $last_players_at the last ping that counted a player
- * @property string|null $stop_reason idle, admin, starter, boot_timeout
+ * @property string|null $stop_reason idle, admin, starter, boot_timeout, crash_loop (#5376)
  * @property CarbonImmutable|null $long_run_alerted_at
  * @property string|null $ssh_private_key this run's OpenSSH private key, encrypted with APP_KEY; wiped once the VPS is gone (#5324)
  * @property int|null $provider_ssh_key_id its public half at the provider

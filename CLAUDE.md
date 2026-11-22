@@ -255,7 +255,12 @@ output. Run with the real binary:
   `RunLog::diagnose()` to the error as "Likely cause: …" (EULA, Java too old with the version
   from the class-file numbers, memory, missing jar, start command not runnable, port, Java not
   installed). It reads only from the last `systemd[1]: Started minecraft-…` line, so an earlier
-  attempt's error doesn't stick. Admin → Servers → Log (`ServerLogController`): the last 10
+  attempt's error doesn't stick. Crash loops (#5376): `advance()` gives up on a set-up starting
+  run once systemd has restarted Minecraft `minecraft.crash_loop_restarts` (3) times, read from
+  the newest "Scheduled restart job, restart counter is at N" line the shipper sent; with no
+  `minecraft` lines 90 s after setup it asks `CloudInit::restartsCommand()` (`systemctl show -p
+  NRestarts --value`) over SSH, at most once a minute (`mvm:restart-check:<run>` cache key).
+  Then `abandon(..., 'crash_loop')` (fallback log + Likely cause), one alert. Admin → Servers → Log (`ServerLogController`): the last 10
   runs, the newest 1,000 lines, polls `/admin/servers/{slug}/log/lines?run=&after=` every 3 s
   while the run is active.
   Checked for real (Nov 22) with a systemd container (`ubuntu:24.04` + systemd, `--privileged
