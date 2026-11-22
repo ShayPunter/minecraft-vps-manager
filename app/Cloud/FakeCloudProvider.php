@@ -25,6 +25,18 @@ class FakeCloudProvider implements CloudProvider
 
     public function createServer(ServerSpec $spec): CloudServer
     {
+        if ($spec->sshKeyIds === []) {
+            throw new CloudException('not_configured', 'A VPS needs at least one SSH key.');
+        }
+
+        $keys = $this->keys();
+
+        foreach ($spec->sshKeyIds as $keyId) {
+            if (! isset($keys[$keyId])) {
+                throw new CloudException('invalid_input', "SSH key {$keyId} not found.", 422);
+            }
+        }
+
         $servers = $this->all();
         $id = $servers === [] ? 1001 : max(array_keys($servers)) + 1;
 
@@ -36,10 +48,96 @@ class FakeCloudProvider implements CloudProvider
             'server_type' => $spec->serverType,
             'location' => $spec->location,
             'user_data' => $spec->userData,
+            'ssh_keys' => $spec->sshKeyIds,
         ];
         $this->save($servers);
 
         return $this->toServer($id, $servers[$id]);
+    }
+
+    public function createSshKey(string $name, string $publicKey, array $labels = []): CloudSshKey
+    {
+        $keys = $this->keys();
+
+        foreach ($keys as $key) {
+            if ($key['name'] === $name) {
+                throw new CloudException('uniqueness_error', 'SSH key with the same name already exists', 409);
+            }
+        }
+
+        $id = $keys === [] ? 501 : max(array_keys($keys)) + 1;
+        $keys[$id] = [
+            'name' => $name,
+            'public_key' => trim($publicKey),
+            'labels' => [...$labels, self::MANAGED_LABEL => self::MANAGED_VALUE],
+        ];
+        $this->saveKeys($keys);
+
+        return new CloudSshKey($id, $name, $keys[$id]['labels']);
+    }
+
+    public function deleteSshKey(int $id): void
+    {
+        if ($this->cache->get(self::KEY.':fail-key-deletes') === true) {
+            throw new CloudException('connection_failed', 'Could not reach Hetzner: fake outage');
+        }
+
+        $keys = $this->keys();
+
+        if (! isset($keys[$id])) {
+            return;
+        }
+
+        if (($keys[$id]['labels'][self::MANAGED_LABEL] ?? null) !== self::MANAGED_VALUE) {
+            throw new CloudException('not_managed', "SSH key {$id} wasn't created by this app; refusing to delete it.");
+        }
+
+        unset($keys[$id]);
+        $this->saveKeys($keys);
+    }
+
+    public function managedSshKeys(): array
+    {
+        $managed = [];
+
+        foreach ($this->keys() as $id => $key) {
+            $cloudKey = new CloudSshKey($id, $key['name'], $key['labels']);
+
+            if ($cloudKey->isManaged()) {
+                $managed[] = $cloudKey;
+            }
+        }
+
+        return $managed;
+    }
+
+    /**
+     * Test helper: a key someone added by hand in the same project (no managed-by label).
+     */
+    public function addUnmanagedSshKey(string $name): CloudSshKey
+    {
+        $keys = $this->keys();
+        $id = $keys === [] ? 501 : max(array_keys($keys)) + 1;
+        $keys[$id] = ['name' => $name, 'public_key' => 'ssh-ed25519 AAAA shay', 'labels' => []];
+        $this->saveKeys($keys);
+
+        return new CloudSshKey($id, $name, []);
+    }
+
+    /**
+     * Test helper: the public key registered under this id, or null when there's none.
+     */
+    public function sshPublicKey(int $id): ?string
+    {
+        return $this->keys()[$id]['public_key'] ?? null;
+    }
+
+    /**
+     * Test helper: make the next deleteSshKey() calls fail (e.g. Hetzner is down).
+     */
+    public function failSshKeyDeletes(bool $fail = true): void
+    {
+        $this->cache->forever(self::KEY.':fail-key-deletes', $fail);
     }
 
     public function findServer(int $id): ?CloudServer
@@ -152,6 +250,27 @@ class FakeCloudProvider implements CloudProvider
     public function reset(): void
     {
         $this->cache->forget(self::KEY);
+        $this->cache->forget(self::KEY.':ssh-keys');
+        $this->cache->forget(self::KEY.':fail-key-deletes');
+    }
+
+    /**
+     * @return array<int, array{name: string, public_key: string, labels: array<string, string>}>
+     */
+    private function keys(): array
+    {
+        $keys = $this->cache->get(self::KEY.':ssh-keys', []);
+
+        /** @var array<int, array{name: string, public_key: string, labels: array<string, string>}> */
+        return is_array($keys) ? $keys : [];
+    }
+
+    /**
+     * @param  array<int, array{name: string, public_key: string, labels: array<string, string>}>  $keys
+     */
+    private function saveKeys(array $keys): void
+    {
+        $this->cache->forever(self::KEY.':ssh-keys', $keys);
     }
 
     /**

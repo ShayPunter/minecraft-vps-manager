@@ -8,31 +8,39 @@ use phpseclib3\Net\SSH2;
 use Throwable;
 
 /**
- * SSH as root with the app's private key (the half of HETZNER_SSH_PUBLIC_KEY that Hetzner
- * puts on every VPS). The host key isn't checked: every VPS is new, made by this app a few
- * minutes earlier, and Hetzner doesn't report its host key, so there's nothing to compare with.
+ * SSH as root with the run's own private key (#5324; Hetzner put its public half on the VPS).
+ * A run started before #5324 has none and falls back to the old key file, if it's still there.
+ * The host key isn't checked: every VPS is new, made by this app a few minutes earlier, and
+ * Hetzner doesn't report its host key, so there's nothing to compare with.
  */
 class SshRemoteShell implements RemoteShell
 {
+    /**
+     * @param  string  $legacyPrivateKeyPath  the hand-made key runs before #5324 used
+     */
     public function __construct(
-        private readonly string $privateKeyPath,
+        private readonly string $legacyPrivateKeyPath,
         private readonly string $user = 'root',
     ) {}
 
-    public function run(string $host, string $command, int $timeoutSeconds): ShellResult
+    public function run(string $host, string $command, int $timeoutSeconds, ?string $privateKey = null): ShellResult
     {
-        if (! is_readable($this->privateKeyPath)) {
-            throw new RemoteShellException("The SSH private key isn't readable at {$this->privateKeyPath} (HETZNER_SSH_PRIVATE_KEY).");
+        if ($privateKey === null) {
+            if (! is_readable($this->legacyPrivateKeyPath)) {
+                throw new RemoteShellException("This run has no SSH key of its own, and there's no old key file at {$this->legacyPrivateKeyPath}.");
+            }
+
+            $privateKey = (string) file_get_contents($this->legacyPrivateKeyPath);
         }
 
         try {
-            $key = PublicKeyLoader::load((string) file_get_contents($this->privateKeyPath));
+            $key = PublicKeyLoader::load($privateKey);
         } catch (Throwable $e) {
             throw new RemoteShellException("Couldn't read the SSH private key: {$e->getMessage()}");
         }
 
         if (! $key instanceof PrivateKey) {
-            throw new RemoteShellException('HETZNER_SSH_PRIVATE_KEY points at a public key, not the private one.');
+            throw new RemoteShellException('The SSH key is a public key, not the private one.');
         }
 
         try {

@@ -100,7 +100,7 @@ output. Run with the real binary:
   saving" (`force=1`, only for `stop_failed`). World upload (#5288) goes between the SSH
   stop and the delete. `provision()` deletes a VPS that arrives after its run ended.
 - `app:doctor` (#5285): APP_URL https, Hetzner token (one read-only `locations()` call),
-  SSH pair readable and matching (phpseclib derives the public half), queue worker (queues
+  the app can make an ed25519 pair (nothing to set up since #5324), queue worker (queues
   `QueueHeartbeat` and waits `--wait` s, 15 by default), scheduler (`servers:watch` beat in
   the last 3 minutes), an admin exists, where alerts go. `App\Support\Heartbeat` keeps the
   beats in the cache as ISO strings; `servers:sweep` also queues a `QueueHeartbeat`. FAIL =
@@ -108,11 +108,24 @@ output. Run with the real binary:
 - Who can stop: admins (Admin → Servers, or the dashboard), and the signed-in user who
   started the run (`POST /servers/{slug}/stop`, 404 for anyone else; `ServerPresenter::mayStop`).
   Guest-started public servers stop by the watchdog or an admin.
-- SSH: `RemoteShell` interface, `SshRemoteShell` (phpseclib 3, root, key at
-  `HETZNER_SSH_PRIVATE_KEY`, default `storage/app/private/ssh/id_ed25519`; no host-key check,
+- SSH: `RemoteShell` interface, `SshRemoteShell` (phpseclib 3, root; no host-key check,
   every VPS is new and Hetzner doesn't report its key), `FakeRemoteShell` in testing/e2e
-  (records commands in the cache; `failWith()`, `unreachable()`). Checked against a real
-  sshd in Docker: exit codes, output, timeout, wrong key, public key given as private.
+  (records commands and the key each used in the cache; `failWith()`, `unreachable()`).
+  Checked against a real sshd in Docker: exit codes, output, timeout, wrong key, public key
+  given as private, and a key from `SshKeyPair::generate()` (#5324).
+- SSH keys (#5324): **every run makes its own pair** (`App\Servers\SshKeyPair`, phpseclib,
+  no shell) in `ServerLauncher::provision()`. The private half is saved on the run first
+  (`server_runs.ssh_private_key`, `encrypted` cast = APP_KEY, `$hidden`), then the public half
+  is registered as `mvm-<slug>-<run>` with `managed-by` + `mvm-run-id` labels
+  (`provider_ssh_key_id`), then the VPS is created with only that key (`ServerSpec::$sshKeyIds`;
+  both providers refuse a spec without one, since Hetzner would email a root password).
+  `stop()` passes the run's key to the shell. `ServerLauncher::end()` (stopped/failed, i.e.
+  the VPS is gone) deletes the key at the provider and wipes both columns; `stop_failed`
+  keeps it for Retry stop. A failed key delete is only logged: the sweep's
+  `deleteOrphanKeys()` removes managed keys no active run uses (by id or `mvm-run-id`
+  label), never unlabelled ones. A run from before #5324 has no key and falls back to the
+  old file at `services.hetzner.legacy_ssh_private_key_path` (not an env var any more).
+  `provision()` re-reads the run first, so a late job never writes back a stale status.
 - `ServerCatalog` caches the provider's types/locations for an hour as plain arrays
   (`config/cache.php` has `serializable_classes => false`, so objects can't be cached).
   Default for new servers: cheapest non-deprecated type with ≥ 8 GB in the first German location.
@@ -126,16 +139,16 @@ output. Run with the real binary:
   E2E's `server-types.spec` signs in as `catalog-admin@example.com` (Fortify's login limit).
 - The welcome page has no app layout, so it mounts its own `<Toaster />`.
 - `App\Cloud` (#5281): `CloudProvider` interface (create/find/delete server, managed
-  servers, server types, locations), `HetznerCloud` (Laravel `Http::`, token and SSH key path
-  from `config('services.hetzner.*')`), `FakeCloudProvider` (state in the cache, so it survives
+  servers, create/delete/list managed SSH keys, server types, locations), `HetznerCloud`
+  (Laravel `Http::`, token from `config('services.hetzner.*')`), `FakeCloudProvider` (state in the cache, so it survives
   `artisan serve`'s separate processes in E2E; `setStatus()` moves a fake VPS on). The binding
   in `AppServiceProvider` returns the fake in the `testing` and `e2e` environments whatever
   `HETZNER_FAKE` says, and `Tests\TestCase` calls `Http::preventStrayRequests()`.
   Every VPS gets `managed-by=minecraft-vps-manager` + `mvm-server-id=<id>`; `deleteServer()`
-  refuses anything without the first. Login is SSH-key only: the ed25519 public key at
-  `HETZNER_SSH_PUBLIC_KEY` is registered with Hetzner on first use (looked up by MD5
-  fingerprint first). Volumes aren't in the interface: worlds go over SFTP (#5288).
-  `tests/fixtures/ssh/id_ed25519.pub` is a throwaway public key (no private half exists).
+  refuses anything without the first; `deleteSshKey()` does the same for keys. Login is
+  SSH-key only, with the run's own key (see SSH keys above). Hetzner key names are unique
+  per project (`uniqueness_error`, 409; the fake enforces it too). Volumes aren't in the
+  interface: worlds go over SFTP (#5288).
 
 ## Rules for this app
 

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Servers;
 
 use App\Cloud\CloudProvider;
+use App\Cloud\CloudServer;
 use App\Cloud\FakeCloudProvider;
 use App\Cloud\ServerSpec;
 use App\Enums\RunStatus;
@@ -309,7 +310,8 @@ class WatchdogTest extends TestCase
     {
         $run = $this->online();
         $cloud = $this->cloud();
-        $orphan = $cloud->createServer(new ServerSpec('mvm-old-999', 'cx33', 'fsn1', 1, '#cloud-config'));
+        $key = $cloud->createSshKey('mvm-old-999', 'ssh-ed25519 AAAA mvm-old-999');
+        $orphan = $cloud->createServer(new ServerSpec('mvm-old-999', 'cx33', 'fsn1', 1, [$key->id], userData: '#cloud-config'));
         // Created by a start whose run id isn't saved on the run yet (provisioning): kept.
         $server = Server::factory()->create(['slug' => 'other']);
         $provisioning = new ServerRun;
@@ -317,7 +319,7 @@ class WatchdogTest extends TestCase
         $provisioning->active_server_id = $server->id;
         $provisioning->status = RunStatus::Provisioning;
         $provisioning->save();
-        $inFlight = $cloud->createServer(new ServerSpec("mvm-other-{$provisioning->id}", 'cx33', 'fsn1', $server->id, '#cloud-config'));
+        $inFlight = $cloud->createServer(new ServerSpec("mvm-other-{$provisioning->id}", 'cx33', 'fsn1', $server->id, [$key->id], userData: '#cloud-config'));
         $handMade = $cloud->addUnmanagedServer('shays-own-box');
 
         $this->sweep();
@@ -365,7 +367,7 @@ class WatchdogTest extends TestCase
         $this->assertSame(RunStatus::Stopped, $run->refresh()->status);
     }
 
-    public function test_a_vps_created_after_its_run_was_stopped_is_deleted_at_once(): void
+    public function test_a_job_that_runs_after_its_run_ended_creates_nothing(): void
     {
         $server = Server::factory()->create(['slug' => 'late']);
         $run = new ServerRun;
@@ -373,13 +375,35 @@ class WatchdogTest extends TestCase
         $run->active_server_id = null;
         $run->status = RunStatus::Failed;
         $run->save();
-        // The job runs late: the run had already ended (here, it's not provisioning any more).
-        $launcher = $this->app->make(ServerLauncher::class);
+        // The caller still holds an old copy that says provisioning: the database wins.
         $run->status = RunStatus::Provisioning;
-        $launcher->provision($run);
+        $this->app->make(ServerLauncher::class)->provision($run);
 
         $this->assertSame([], $this->cloud()->managedServers());
+        $this->assertSame([], $this->cloud()->managedSshKeys());
         $this->assertSame(RunStatus::Failed, $run->refresh()->status);
+    }
+
+    public function test_a_vps_created_after_its_run_was_stopped_is_deleted_at_once(): void
+    {
+        // The run ends (a stop, a boot timeout) while the provider is still creating the VPS.
+        $this->app->instance(CloudProvider::class, new class($this->app->make('cache.store')) extends FakeCloudProvider
+        {
+            public function createServer(ServerSpec $spec): CloudServer
+            {
+                ServerRun::query()->update(['status' => RunStatus::Failed, 'active_server_id' => null]);
+
+                return parent::createServer($spec);
+            }
+        });
+        $server = Server::factory()->create(['slug' => 'late']);
+        $run = $this->app->make(ServerLauncher::class)->start($server, null, null)->refresh();
+
+        $this->assertSame([], $this->cloud()->managedServers());
+        $this->assertSame([], $this->cloud()->managedSshKeys(), 'Its key goes with it.');
+        $this->assertSame(RunStatus::Failed, $run->status);
+        $this->assertNull($run->ssh_private_key);
+        $this->assertNull($run->provider_ssh_key_id);
     }
 
     public function test_the_starter_and_admins_can_stop_others_cant(): void

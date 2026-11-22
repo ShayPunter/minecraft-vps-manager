@@ -40,7 +40,6 @@ class AppServiceProvider extends ServiceProvider
             return new HetznerCloud(
                 token: is_string($token) ? $token : null,
                 baseUrl: (string) config('services.hetzner.base_url'),
-                sshPublicKeyPath: (string) config('services.hetzner.ssh_public_key_path'),
             );
         });
 
@@ -57,7 +56,7 @@ class AppServiceProvider extends ServiceProvider
                 return new FakeRemoteShell($app->make(CacheRepository::class));
             }
 
-            return new SshRemoteShell((string) config('services.hetzner.ssh_private_key_path'));
+            return new SshRemoteShell((string) config('services.hetzner.legacy_ssh_private_key_path'));
         });
     }
 

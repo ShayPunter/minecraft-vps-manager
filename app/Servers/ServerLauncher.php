@@ -81,18 +81,44 @@ class ServerLauncher
      */
     public function provision(ServerRun $run): void
     {
+        // What the database says, not what the caller held: the saves below must never write
+        // back a status that a stop or a timeout has changed since.
+        $run->refresh();
+
         if ($run->status !== RunStatus::Provisioning) {
             return;
         }
 
         $server = $run->server;
+        $name = "mvm-{$server->slug}-{$run->id}";
+
+        // A key pair of its own for this VPS (#5324). The private half is saved (encrypted)
+        // before the public half goes to the provider, so a key that exists there always has
+        // a run that can log in with it, or gets cleaned up with that run.
+        $keys = SshKeyPair::generate($name);
+        $run->ssh_private_key = $keys->privateKey;
+        $run->save();
+
+        try {
+            $sshKey = $this->cloud->createSshKey($name, $keys->publicKey, [
+                CloudProvider::RUN_ID_LABEL => (string) $run->id,
+            ]);
+        } catch (CloudException $e) {
+            $this->fail($run, "The cloud provider refused the VPS's SSH key: {$e->getMessage()}");
+
+            return;
+        }
+
+        $run->provider_ssh_key_id = $sshKey->id;
+        $run->save();
 
         try {
             $vps = $this->cloud->createServer(new ServerSpec(
-                name: "mvm-{$server->slug}-{$run->id}",
+                name: $name,
                 serverType: $server->server_type,
                 location: $server->location,
                 minecraftServerId: $server->id,
+                sshKeyIds: [$sshKey->id],
                 userData: CloudInit::for($server),
             ));
         } catch (CloudException $e) {
@@ -107,6 +133,7 @@ class ServerLauncher
 
         if ($run->status !== RunStatus::Provisioning) {
             $this->cloud->deleteServer($vps->id);
+            $this->releaseKey($run, $sshKey->id);
 
             return;
         }
@@ -223,7 +250,7 @@ class ServerLauncher
 
         if (! $force && $run->online_at !== null && $run->ipv4 !== null && $run->provider_server_id !== null) {
             try {
-                $result = $this->shell->run($run->ipv4, CloudInit::stopCommand($server), 360);
+                $result = $this->shell->run($run->ipv4, CloudInit::stopCommand($server), 360, $run->ssh_private_key);
             } catch (RemoteShellException $e) {
                 $this->stopFailed($run, "Couldn't reach the VPS to save the world: {$e->getMessage()}");
 
@@ -294,11 +321,39 @@ class ServerLauncher
         $this->end($run, RunStatus::Failed);
     }
 
+    /**
+     * The run is over and its VPS is gone (deleted, never made, or vanished): its key goes too.
+     * A run that ends in stop_failed never comes here, so Retry stop can still log in.
+     */
     private function end(ServerRun $run, RunStatus $status): void
     {
         $run->status = $status;
         $run->active_server_id = null;
         $run->ended_at = now();
         $run->save();
+
+        $this->releaseKey($run, $run->provider_ssh_key_id);
+    }
+
+    /**
+     * Delete the run's key at the provider and wipe the private half. When the provider can't
+     * be reached the key is still wiped here: the public half left at the provider is matched
+     * by no active run, so the next sweep deletes it.
+     */
+    private function releaseKey(ServerRun $run, ?int $providerKeyId): void
+    {
+        if ($providerKeyId !== null) {
+            try {
+                $this->cloud->deleteSshKey($providerKeyId);
+            } catch (CloudException $e) {
+                Log::warning("Couldn't delete SSH key {$providerKeyId} of run {$run->id}; the sweep will: {$e->getMessage()}");
+            }
+        }
+
+        if ($run->ssh_private_key !== null || $run->provider_ssh_key_id !== null) {
+            $run->ssh_private_key = null;
+            $run->provider_ssh_key_id = null;
+            $run->save();
+        }
     }
 }

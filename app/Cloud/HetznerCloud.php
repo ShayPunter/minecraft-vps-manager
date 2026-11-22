@@ -13,25 +13,24 @@ use Illuminate\Support\Facades\Http;
  */
 class HetznerCloud implements CloudProvider
 {
-    /** Name of the SSH key the app registers with Hetzner. */
-    public const SSH_KEY_NAME = 'minecraft-vps-manager';
-
-    private ?int $sshKeyId = null;
-
     public function __construct(
         private readonly ?string $token,
         private readonly string $baseUrl,
-        private readonly string $sshPublicKeyPath,
     ) {}
 
     public function createServer(ServerSpec $spec): CloudServer
     {
+        if ($spec->sshKeyIds === []) {
+            // Without a key Hetzner sets a root password and emails it: never.
+            throw new CloudException('not_configured', 'A VPS needs at least one SSH key.');
+        }
+
         $body = [
             'name' => $spec->name,
             'server_type' => $spec->serverType,
             'location' => $spec->location,
             'image' => $spec->image,
-            'ssh_keys' => [$this->sshKeyId()],
+            'ssh_keys' => $spec->sshKeyIds,
             'labels' => $spec->allLabels(),
             'start_after_create' => true,
             'public_net' => ['enable_ipv4' => true, 'enable_ipv6' => true],
@@ -163,58 +162,53 @@ class HetznerCloud implements CloudProvider
         }, $this->paginate('/locations', 'locations'));
     }
 
-    /**
-     * The id of the app's SSH key at Hetzner, registering the public key on first use.
-     */
-    public function sshKeyId(): int
+    public function createSshKey(string $name, string $publicKey, array $labels = []): CloudSshKey
     {
-        if ($this->sshKeyId !== null) {
-            return $this->sshKeyId;
-        }
-
-        $publicKey = $this->publicKey();
-        $existing = $this->list($this->send('get', '/ssh_keys', ['fingerprint' => self::fingerprint($publicKey)])->json('ssh_keys'));
-
-        if ($existing !== []) {
-            return $this->sshKeyId = (int) $this->object($existing[0])['id'];
-        }
-
         $created = $this->send('post', '/ssh_keys', [
-            'name' => self::SSH_KEY_NAME,
-            'public_key' => $publicKey,
-            'labels' => [self::MANAGED_LABEL => self::MANAGED_VALUE],
+            'name' => $name,
+            'public_key' => trim($publicKey),
+            'labels' => [...$labels, self::MANAGED_LABEL => self::MANAGED_VALUE],
         ])->json('ssh_key');
 
-        return $this->sshKeyId = (int) $this->object($created)['id'];
+        return $this->toSshKey($created);
     }
 
-    /**
-     * The MD5 fingerprint Hetzner shows for a public key (`aa:bb:…`).
-     */
-    public static function fingerprint(string $publicKey): string
+    public function deleteSshKey(int $id): void
     {
-        $parts = preg_split('/\s+/', trim($publicKey)) ?: [];
-        $blob = base64_decode($parts[1] ?? '', true);
+        $response = $this->send('get', "/ssh_keys/{$id}", allowNotFound: true);
 
-        if ($blob === false || $blob === '') {
-            throw new CloudException('not_configured', 'The SSH public key is not in OpenSSH format.');
+        if ($response === null) {
+            return;
         }
 
-        return implode(':', str_split(md5($blob), 2));
+        if (! $this->toSshKey($response->json('ssh_key'))->isManaged()) {
+            throw new CloudException('not_managed', "SSH key {$id} wasn't created by this app; refusing to delete it.");
+        }
+
+        $this->send('delete', "/ssh_keys/{$id}", allowNotFound: true);
     }
 
-    private function publicKey(): string
+    public function managedSshKeys(): array
     {
-        $key = is_file($this->sshPublicKeyPath) ? trim((string) file_get_contents($this->sshPublicKeyPath)) : '';
+        $selector = self::MANAGED_LABEL.'='.self::MANAGED_VALUE;
 
-        if (! str_starts_with($key, 'ssh-ed25519 ')) {
-            throw new CloudException(
-                'not_configured',
-                "No ed25519 public key at {$this->sshPublicKeyPath}. Create one with ssh-keygen -t ed25519.",
-            );
-        }
+        $keys = array_map(
+            fn (mixed $key) => $this->toSshKey($key),
+            $this->paginate('/ssh_keys', 'ssh_keys', ['label_selector' => $selector]),
+        );
 
-        return $key;
+        return array_values(array_filter($keys, fn (CloudSshKey $key) => $key->isManaged()));
+    }
+
+    private function toSshKey(mixed $key): CloudSshKey
+    {
+        $key = $this->object($key);
+
+        return new CloudSshKey(
+            id: (int) $key['id'],
+            name: (string) ($key['name'] ?? ''),
+            labels: array_map(fn (mixed $value) => (string) $value, $this->object($key['labels'] ?? [])),
+        );
     }
 
     /**
