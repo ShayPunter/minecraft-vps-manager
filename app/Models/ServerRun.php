@@ -33,6 +33,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $prepared_at the world is in place and Minecraft was started
  * @property int|null $world_archive_id the archive this run started from (null: a new world)
  * @property int|null $saved_world_archive_id the archive this run's stop saved
+ * @property string|null $dns_record_id the A record this run made (#5338); null once deleted
+ * @property string|null $dns_zone_id the zone that record is in
+ * @property string|null $dns_name the name it pointed at the VPS
+ * @property string|null $dns_error why the name couldn't be set (the IP still works)
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read Server $server

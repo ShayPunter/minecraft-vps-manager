@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\DnsController;
 use App\Http\Controllers\Admin\ServerController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\WorldArchiveController;
@@ -48,6 +49,10 @@ Route::middleware(['auth', EnsureUserIsAdmin::class])
             ->name('world-storage.test');
         Route::post('servers/{server}/world', [WorldArchiveController::class, 'store'])->name('servers.world.store');
         Route::get('servers/{server}/world/{archive}', [WorldArchiveController::class, 'show'])->name('servers.world.show');
+
+        // DNS names for servers (#5338). Saving calls Cloudflare, so it's throttled.
+        Route::get('dns', [DnsController::class, 'edit'])->name('dns.edit');
+        Route::put('dns', [DnsController::class, 'update'])->middleware('throttle:10,1')->name('dns.update');
     });
 
 require __DIR__.'/settings.php';

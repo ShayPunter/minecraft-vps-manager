@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Admin;
 
 use App\Cloud\CloudException;
+use App\Dns\Dns;
 use App\Models\Server;
 use App\Servers\ServerCatalog;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -27,7 +28,30 @@ class ServerRequest extends FormRequest
             'is_public' => $this->boolean('is_public'),
             'icon_url' => filled($this->input('icon_url')) ? $this->input('icon_url') : null,
             'description' => filled($this->input('description')) ? $this->input('description') : null,
+            'subdomain' => $this->normalisedSubdomain(),
         ]);
+    }
+
+    /**
+     * Lowercase, no trailing dot, and a full name inside the zone ("atm9.example.com") cut
+     * down to the part before the domain.
+     */
+    private function normalisedSubdomain(): ?string
+    {
+        $value = $this->input('subdomain');
+
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        $value = rtrim(strtolower(trim($value)), '.');
+        $domain = app(Dns::class)->saved()?->domain;
+
+        if ($domain !== null && str_ends_with($value, '.'.$domain)) {
+            $value = substr($value, 0, -strlen('.'.$domain));
+        }
+
+        return $value;
     }
 
     /**
@@ -53,6 +77,10 @@ class ServerRequest extends FormRequest
             'start_command' => ['required', 'string', 'max:500', 'not_regex:/[\r\n\0]/'],
             'java_version' => ['required', 'integer', Rule::in(config('minecraft.java_versions'))],
             'idle_minutes' => ['required', 'integer', 'min:5', 'max:240'],
+            'subdomain' => [
+                'nullable', 'string', 'max:190', 'regex:'.Server::SUBDOMAIN_PATTERN,
+                Rule::unique(Server::class, 'subdomain')->ignore($server instanceof Server ? $server->id : null),
+            ],
         ];
     }
 
@@ -64,6 +92,8 @@ class ServerRequest extends FormRequest
         return [
             'slug.regex' => 'Use lowercase letters, digits and single dashes only (e.g. all-the-mods-9).',
             'start_command.not_regex' => 'Keep the start command on one line.',
+            'subdomain.regex' => 'Use lowercase letters, digits and dashes, with dots between parts (e.g. atm9 or mc.atm9).',
+            'subdomain.unique' => 'Another server already uses that name.',
         ];
     }
 
@@ -75,6 +105,21 @@ class ServerRequest extends FormRequest
     public function after(): array
     {
         return [
+            function (Validator $validator): void {
+                $subdomain = $this->input('subdomain');
+                $domain = app(Dns::class)->saved()?->domain;
+
+                if (is_string($subdomain) && $domain !== null && ! $validator->errors()->has('subdomain')) {
+                    $name = "{$subdomain}.{$domain}";
+                    $appHost = strtolower((string) parse_url((string) config('app.url'), PHP_URL_HOST));
+
+                    if ($name === $appHost) {
+                        $validator->errors()->add('subdomain', "{$name} is this app's own address. Pick another name.");
+                    } elseif (strlen($name) > 253) {
+                        $validator->errors()->add('subdomain', 'That name is too long for DNS.');
+                    }
+                }
+            },
             function (Validator $validator): void {
                 if ($validator->errors()->hasAny(['server_type', 'location'])) {
                     return;

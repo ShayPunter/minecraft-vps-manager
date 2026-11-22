@@ -40,6 +40,12 @@ return [
         'fake' => (bool) env('HETZNER_FAKE', false),
     ],
 
+    // Admin → DNS (#5338). The token and zone are set on that page, not here.
+    'cloudflare' => [
+        'base_url' => 'https://api.cloudflare.com/client/v4',
+        'fake' => (bool) env('CLOUDFLARE_FAKE', false),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

@@ -61,9 +61,19 @@ one before the VPS is deleted. Servers can't start until world storage is set up
    For world/modpack uploads bigger than PHP's default 2 MB, raise `upload_max_filesize`
    and `post_max_size` (Forge → server → PHP) and nginx's `client_max_body_size` to match
    `MVM_WORLD_UPLOAD_MAX_MB` (default 4096).
-8. **Check it**: `php artisan app:doctor`. It tries the token with one read-only call, checks
+8. **DNS (optional)**: give servers a name like `atm9.example.com` instead of an IP. The domain
+   must be on Cloudflare. In Cloudflare, My Profile → API Tokens → Create Token → the
+   **Edit zone DNS** template, Zone Resources: Include → Specific zone → your domain. Copy
+   the token, and the **Zone ID** from the domain's Overview page (API section). In the app,
+   Admin → DNS: domain, Zone ID and token, then **Test and save** (it makes and deletes a
+   `_mvm-test-…` TXT record). Then set a **Subdomain** on a server in Admin → Servers.
+   While that server runs, an A record (DNS only, TTL 60) points the name at its VPS; it
+   is deleted when the server stops. Records the app makes carry
+   `managed-by=minecraft-vps-manager` in their comment; records you made yourself are never
+   changed, and a name that already has one is left alone (players get the IP instead).
+9. **Check it**: `php artisan app:doctor`. It tries the token with one read-only call, checks
    the app can make SSH keys, has the worker run a test job, checks the scheduler ran in the last
-   3 minutes, tests world storage (writes and deletes a small file), and says where alerts go. It prints no secrets and exits 1 if anything fails.
+   3 minutes, tests world storage (writes and deletes a small file) and DNS if it's set up, and says where alerts go. It prints no secrets and exits 1 if anything fails (DNS only warns).
 
 ### How a start works
 

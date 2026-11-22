@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Dns\FakeDnsProvider;
+use App\Models\DnsSetting;
 use App\Models\User;
 use App\Models\WorldStorageSetting;
 use App\Support\Heartbeat;
@@ -41,6 +43,36 @@ class DoctorCommandTest extends TestCase
             ->expectsOutputToContain('servers:watch ran')
             ->expectsOutputToContain('SFTP minecraft@storage.example.com:22, base folder minecraft-worlds: connected and writable.')
             ->expectsOutputToContain('Ready to start servers.')
+            ->assertSuccessful();
+    }
+
+    public function test_dns_is_optional_and_checked_when_set_up(): void
+    {
+        $this->ready();
+        config(['queue.default' => 'database']);
+        $this->app['config']->set('queue.connections.database', ['driver' => 'sync']);
+
+        $this->artisan('app:doctor')
+            ->expectsOutputToContain("DNS isn't set up")
+            ->assertSuccessful();
+
+        $row = new DnsSetting;
+        $row->domain = 'example.com';
+        $row->zone_id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        $row->api_token = 'cf-doctor-secret';
+        $row->save();
+
+        $this->artisan('app:doctor')
+            ->expectsOutputToContain("The token can edit example.com's DNS.")
+            ->doesntExpectOutputToContain('cf-doctor-secret')
+            ->assertSuccessful();
+
+        $row->api_token = FakeDnsProvider::FAKE_BAD_TOKEN;
+        $row->save();
+
+        // A broken token is a warning: servers still start on their IP.
+        $this->artisan('app:doctor')
+            ->expectsOutputToContain('Cloudflare refused the token')
             ->assertSuccessful();
     }
 

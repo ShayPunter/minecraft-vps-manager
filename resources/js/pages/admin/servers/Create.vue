@@ -10,6 +10,7 @@ import type { ServerCatalog } from '@/types/servers';
 defineProps<{
     catalog: ServerCatalog;
     javaVersions: number[];
+    dnsDomain: string | null;
 }>();
 
 defineOptions({
@@ -40,6 +41,7 @@ defineOptions({
                 :errors="errors"
                 :catalog="catalog"
                 :java-versions="javaVersions"
+                :dns-domain="dnsDomain"
             />
 
             <div class="flex items-center gap-4">

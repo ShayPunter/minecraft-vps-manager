@@ -202,6 +202,26 @@ output. Run with the real binary:
   rename, download, SHA-256 refusal, running-server refusal, wrong host key, single-folder
   zip. `putFiles()` against an alpine sshd (`openssh-sftp-server` needed) from `php:8.4-cli`.
   FTPS wasn't checked for real (no certificate in the test setup).
+- DNS names (#5338, `App\Dns`): Admin → DNS (`DnsController`, `DnsSetting`, one row: domain,
+  Cloudflare zone id, `api_token` encrypted + `$hidden`). Only `/zones/{id}/dns_records` is
+  called, so an "Edit zone DNS" token for one zone is enough (no Zone Read for `/zones`).
+  Saving runs `Dns::test()`: make and delete a TXT `_mvm-test-<rand>.<domain>`; Cloudflare
+  appends its own zone name to a name outside the zone, so a different returned name means
+  the zone id belongs to another domain. `servers.subdomain` (unique, `Server::SUBDOMAIN_PATTERN`,
+  a full name inside the zone is cut down to the part before the domain, the app's own host
+  is refused). `ServerLauncher` calls `Dns::point()` after provision (VPS has its IP) and
+  again when the VPS is running, `Dns::release()` in `end()`; both are wrapped so nothing
+  DNS-related can fail a start or stop. `point()`: a record with that name and no managed
+  comment → refused (`server_runs.dns_error`, one alert, address stays the IP); a managed one
+  from an ended run is replaced; one owned by another active run is left. Record comment
+  `managed-by=minecraft-vps-manager mvm-run-id=<id>`; `server_runs.dns_record_id/zone_id/name`.
+  `servers:sweep` → `Dns::deleteOrphans()` (managed records no active run owns, by id or run
+  id). `ServerPresenter` shows `dns_name` as the address while the record exists, and
+  `dns_error` to admins only. `CloudflareDns` (Laravel `Http::`, 10 s timeout, pages of 100,
+  re-filters names/comments itself), `FakeDnsProvider` in testing/e2e or `CLOUDFLARE_FAKE`
+  (records in the cache; `bad-token`, zone `ffff…` 404, zone `eeee…` = `other.example`;
+  `seed()`, `records()`, `failWith()`). Admin → DNS lists the managed A records it finds.
+  `app:doctor` WARNs (never FAILs) on DNS. Not checked against the real Cloudflare API.
 - `App\Cloud` (#5281): `CloudProvider` interface (create/find/delete server, managed
   servers, create/delete/list managed SSH keys, server types, locations), `HetznerCloud`
   (Laravel `Http::`, token from `config('services.hetzner.*')`), `FakeCloudProvider` (state in the cache, so it survives

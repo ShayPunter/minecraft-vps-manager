@@ -4,6 +4,7 @@ namespace App\Servers;
 
 use App\Cloud\CloudException;
 use App\Cloud\CloudProvider;
+use App\Dns\Dns;
 use App\Enums\RunStatus;
 use App\Models\ServerRun;
 use Illuminate\Support\Facades\Log;
@@ -14,7 +15,8 @@ use Illuminate\Support\Facades\Log;
  *   watch() every minute: moves starting runs on, gives up on runs that never come online,
  *           and stops online servers nobody has played on for the server's idle minutes.
  *   sweep() every 10 minutes: deletes VPSes with the app's label that no active run knows,
- *           retries failed stops, and alerts once on runs older than max_run_hours.
+ *           retries failed stops, deletes the app's DNS records no active run owns (#5338),
+ *           and alerts once on runs older than max_run_hours.
  */
 class Watchdog
 {
@@ -23,6 +25,7 @@ class Watchdog
         private readonly MinecraftProbe $probe,
         private readonly CloudProvider $cloud,
         private readonly Alerter $alerter,
+        private readonly Dns $dns,
     ) {}
 
     public function watch(): void
@@ -38,6 +41,7 @@ class Watchdog
         $this->retryFailedStops();
         $this->deleteOrphans();
         $this->deleteOrphanKeys();
+        $this->dns->deleteOrphans();
         $this->alertLongRuns();
     }
 
