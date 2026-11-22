@@ -61,7 +61,28 @@ output. Run with the real binary:
 - Shared props: `auth.user` (without relations) and `auth.isAdmin` (sidebar "Users" link).
 - `/version` (`App\Support\DeployedVersion`, copied from MDG): outside the web middleware,
   no cookies.
-- Welcome page takes a `servers` prop (public servers); it's `[]` until the servers card.
+- Servers (#5282): `Server` (definition, route key = slug, `SLUG_PATTERN`) and `ServerRun`
+  (one VPS lifetime). `server_runs.active_server_id` equals `server_id` while a run is
+  active and is unique, so the database itself refuses two active runs for one server.
+  Every status change goes through `App\Servers\ServerLauncher` (provisioning → booting →
+  starting → online; stopping → stopped; failed): `start()` takes a cache lock, checks the
+  cap (`config('minecraft.max_running')`, `MVM_MAX_RUNNING`, default 2) and queues
+  `ProvisionServerRun` (one try: a retry could make a second VPS). `advanceActive()` runs on
+  dashboard/home page views (throttled by `MVM_CHECK_INTERVAL`, 10 s; E2E sets 0) and every
+  minute via the scheduled `servers:advance`. "Online" = Minecraft's port takes a TCP
+  connection (`MinecraftProbe`; `FakeMinecraftProbe` in testing/e2e, `refuse()` in tests).
+  In E2E the fake VPS boots on its first check (`FakeCloudProvider` `autoBoot`).
+- `App\Servers\CloudInit`: user data as `#cloud-config` + JSON (valid YAML), files base64,
+  commands as argv lists. The admin's start command is the only thing a shell sees (one
+  line, in `/usr/local/bin/mvm-start` on the VPS); the unit is `minecraft-<slug>.service`.
+  Don't use `escapeshellarg()` there: on Windows it double-quotes, and the script runs on Linux.
+- Start is `POST /servers/{slug}/start` (`throttle:server-start`, 5/min per user or IP).
+  Public servers can be started by guests (#5276); private ones 404 for guests. Admin →
+  Servers has Stop (deletes the VPS) until the watchdog (#5283) stops idle servers itself.
+- `ServerCatalog` caches the provider's types/locations for an hour as plain arrays
+  (`config/cache.php` has `serializable_classes => false`, so objects can't be cached).
+  Default for new servers: cheapest non-deprecated type with ≥ 8 GB in the first German location.
+- The welcome page has no app layout, so it mounts its own `<Toaster />`.
 - `App\Cloud` (#5281): `CloudProvider` interface (create/find/delete server, managed
   servers, server types, locations), `HetznerCloud` (Laravel `Http::`, token and SSH key path
   from `config('services.hetzner.*')`), `FakeCloudProvider` (state in the cache, so it survives

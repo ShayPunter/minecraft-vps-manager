@@ -24,5 +24,12 @@ class E2ESeeder extends Seeder
             'email' => 'player@example.com',
             'created_at' => now()->subYear(),
         ]);
+
+        // servers.spec (accounts.spec deletes Pat).
+        User::factory()->create([
+            'name' => 'Robin Starter',
+            'email' => 'starter@example.com',
+            'created_at' => now()->subYear(),
+        ]);
     }
 }

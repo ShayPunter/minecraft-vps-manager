@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { FolderGit2, LayoutGrid, Users } from '@lucide/vue';
+import { FolderGit2, LayoutGrid, Server, Users } from '@lucide/vue';
 import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
@@ -16,6 +16,7 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
+import { index as adminServers } from '@/routes/admin/servers';
 import { index as adminUsers } from '@/routes/admin/users';
 import type { NavItem } from '@/types';
 
@@ -28,7 +29,10 @@ const mainNavItems = computed<NavItem[]>(() => [
         icon: LayoutGrid,
     },
     ...(page.props.auth.isAdmin
-        ? [{ title: 'Users', href: adminUsers(), icon: Users }]
+        ? [
+              { title: 'Servers', href: adminServers(), icon: Server },
+              { title: 'Users', href: adminUsers(), icon: Users },
+          ]
         : []),
 ]);
 

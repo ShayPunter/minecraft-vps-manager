@@ -1,0 +1,183 @@
+<script setup lang="ts">
+import { Form, Head, Link, usePoll } from '@inertiajs/vue3';
+import ServerController from '@/actions/App/Http/Controllers/Admin/ServerController';
+import Heading from '@/components/Heading.vue';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
+import { create, edit, index } from '@/routes/admin/servers';
+import type { ServerSummary } from '@/types/servers';
+
+defineProps<{
+    servers: ServerSummary[];
+    maxRunning: number;
+}>();
+
+defineOptions({
+    layout: {
+        breadcrumbs: [{ title: 'Servers', href: index() }],
+    },
+});
+
+usePoll(5000, { only: ['servers'] });
+</script>
+
+<template>
+    <Head title="Servers" />
+
+    <div class="flex flex-col gap-6 p-4">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <Heading
+                title="Servers"
+                :description="`At most ${maxRunning} run at once. Each one's VPS is created on Start and deleted on Stop.`"
+            />
+            <Button as-child data-test="new-server">
+                <Link :href="create()">New server</Link>
+            </Button>
+        </div>
+
+        <div
+            v-if="servers.length === 0"
+            class="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground"
+        >
+            No servers yet.
+        </div>
+
+        <div
+            v-else
+            class="overflow-x-auto rounded-xl border border-sidebar-border/70"
+        >
+            <table class="w-full text-left text-sm" data-test="servers-table">
+                <thead class="border-b bg-muted/40 text-muted-foreground">
+                    <tr>
+                        <th class="px-4 py-2 font-medium">Name</th>
+                        <th class="px-4 py-2 font-medium">Visibility</th>
+                        <th class="px-4 py-2 font-medium">Status</th>
+                        <th class="px-4 py-2 font-medium">
+                            <span class="sr-only">Actions</span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr
+                        v-for="server in servers"
+                        :key="server.id"
+                        class="border-b last:border-0"
+                        :data-test="`server-row-${server.slug}`"
+                    >
+                        <td class="px-4 py-2">
+                            <p class="font-medium">{{ server.name }}</p>
+                            <p class="font-mono text-xs text-muted-foreground">
+                                {{ server.slug }}
+                            </p>
+                        </td>
+                        <td class="px-4 py-2">
+                            {{ server.is_public ? 'Public' : 'Private' }}
+                        </td>
+                        <td class="px-4 py-2">
+                            <Badge
+                                :variant="
+                                    server.status === 'online'
+                                        ? 'default'
+                                        : 'secondary'
+                                "
+                                >{{ server.status_label }}</Badge
+                            >
+                            <span
+                                v-if="server.address"
+                                class="ml-2 font-mono text-xs"
+                                >{{ server.address }}</span
+                            >
+                        </td>
+                        <td class="px-4 py-2">
+                            <div class="flex justify-end gap-2">
+                                <Form
+                                    v-if="!server.can_start"
+                                    v-bind="
+                                        ServerController.stop.form(server.slug)
+                                    "
+                                    :options="{ preserveScroll: true }"
+                                    v-slot="{ processing }"
+                                >
+                                    <Button
+                                        type="submit"
+                                        variant="outline"
+                                        size="sm"
+                                        :disabled="processing"
+                                        :aria-label="`Stop ${server.name}`"
+                                        >Stop</Button
+                                    >
+                                </Form>
+                                <Button variant="outline" size="sm" as-child>
+                                    <Link
+                                        :href="edit(server.slug)"
+                                        :aria-label="`Edit ${server.name}`"
+                                        >Edit</Link
+                                    >
+                                </Button>
+                                <Dialog v-if="server.can_start">
+                                    <DialogTrigger as-child>
+                                        <Button
+                                            variant="destructive"
+                                            size="sm"
+                                            :aria-label="`Delete ${server.name}`"
+                                            >Delete</Button
+                                        >
+                                    </DialogTrigger>
+                                    <DialogContent>
+                                        <Form
+                                            v-bind="
+                                                ServerController.destroy.form(
+                                                    server.slug,
+                                                )
+                                            "
+                                            class="space-y-6"
+                                            v-slot="{ processing }"
+                                        >
+                                            <DialogHeader class="space-y-3">
+                                                <DialogTitle
+                                                    >Delete
+                                                    {{
+                                                        server.name
+                                                    }}?</DialogTitle
+                                                >
+                                                <DialogDescription>
+                                                    The server's settings and
+                                                    run history go. Its saved
+                                                    world isn't touched.
+                                                </DialogDescription>
+                                            </DialogHeader>
+                                            <DialogFooter class="gap-2">
+                                                <DialogClose as-child>
+                                                    <Button variant="secondary"
+                                                        >Cancel</Button
+                                                    >
+                                                </DialogClose>
+                                                <Button
+                                                    type="submit"
+                                                    variant="destructive"
+                                                    :disabled="processing"
+                                                    data-test="confirm-delete-server"
+                                                    >Delete server</Button
+                                                >
+                                            </DialogFooter>
+                                        </Form>
+                                    </DialogContent>
+                                </Dialog>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</template>

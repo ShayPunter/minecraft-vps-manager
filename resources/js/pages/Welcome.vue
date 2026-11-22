@@ -1,18 +1,17 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePoll } from '@inertiajs/vue3';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
+import ServerCard from '@/components/ServerCard.vue';
 import { Button } from '@/components/ui/button';
+import { Toaster } from '@/components/ui/sonner';
 import { dashboard, login } from '@/routes';
-
-type PublicServer = {
-    id: number;
-    name: string;
-    description: string | null;
-};
+import type { ServerSummary } from '@/types/servers';
 
 defineProps<{
-    servers: PublicServer[];
+    servers: ServerSummary[];
 }>();
+
+usePoll(5000, { only: ['servers'] });
 </script>
 
 <template>
@@ -42,9 +41,10 @@ defineProps<{
                     Minecraft servers, on when you play
                 </h1>
                 <p class="text-muted-foreground">
-                    Log in and start a server. It runs on its own cloud machine
-                    and shuts down after 15 minutes with nobody online, so it
-                    only costs money while people play.
+                    Start a server below (or log in for the private ones). It
+                    runs on its own cloud machine and shuts down after 15
+                    minutes with nobody online, so it only costs money while
+                    people play.
                 </p>
             </div>
 
@@ -53,19 +53,11 @@ defineProps<{
                     Servers
                 </h2>
                 <ul v-if="servers.length > 0" class="grid gap-3 sm:grid-cols-2">
-                    <li
+                    <ServerCard
                         v-for="server in servers"
                         :key="server.id"
-                        class="rounded-xl border p-4"
-                    >
-                        <p class="font-medium">{{ server.name }}</p>
-                        <p
-                            v-if="server.description"
-                            class="text-sm text-muted-foreground"
-                        >
-                            {{ server.description }}
-                        </p>
-                    </li>
+                        :server="server"
+                    />
                 </ul>
                 <p
                     v-else
@@ -76,5 +68,8 @@ defineProps<{
                 </p>
             </section>
         </main>
+
+        <!-- The welcome page has no app layout, so it mounts its own (Start answers with a toast). -->
+        <Toaster />
     </div>
 </template>

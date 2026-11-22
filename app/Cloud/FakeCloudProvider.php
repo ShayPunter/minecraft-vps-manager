@@ -14,7 +14,14 @@ class FakeCloudProvider implements CloudProvider
 {
     private const KEY = 'fake-cloud:servers';
 
-    public function __construct(private readonly Repository $cache) {}
+    /**
+     * @param  bool  $autoBoot  report an `initializing` server as `running` the next time
+     *                          it's looked up (E2E, where no test can call setStatus())
+     */
+    public function __construct(
+        private readonly Repository $cache,
+        private readonly bool $autoBoot = false,
+    ) {}
 
     public function createServer(ServerSpec $spec): CloudServer
     {
@@ -38,6 +45,11 @@ class FakeCloudProvider implements CloudProvider
     public function findServer(int $id): ?CloudServer
     {
         $server = $this->all()[$id] ?? null;
+
+        if ($server !== null && $this->autoBoot && $server['status'] === 'initializing') {
+            $this->setStatus($id, 'running');
+            $server['status'] = 'running';
+        }
 
         return $server === null ? null : $this->toServer($id, $server);
     }
