@@ -2,14 +2,15 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Cloud\CloudException;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\ServerStopController;
 use App\Http\Requests\Admin\ServerRequest;
 use App\Models\Server;
 use App\Servers\ServerCatalog;
 use App\Servers\ServerLauncher;
 use App\Servers\ServerPresenter;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -18,10 +19,10 @@ use Inertia\Response;
  */
 class ServerController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
         return Inertia::render('admin/servers/Index', [
-            'servers' => ServerPresenter::list(Server::query()),
+            'servers' => ServerPresenter::list(Server::query(), $request->user()),
             'maxRunning' => (int) config('minecraft.max_running'),
         ]);
     }
@@ -46,7 +47,7 @@ class ServerController extends Controller
     public function edit(Server $server, ServerCatalog $catalog): Response
     {
         return Inertia::render('admin/servers/Edit', [
-            'server' => $server->only(['id', 'name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version']),
+            'server' => $server->only(['id', 'name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes']),
             'catalog' => $catalog->formOptions(),
             'javaVersions' => config('minecraft.java_versions'),
         ]);
@@ -78,28 +79,11 @@ class ServerController extends Controller
     }
 
     /**
-     * Delete the VPS now. Until the watchdog (#5283) exists, this is how a server stops.
+     * Stop now: the world is saved, then the VPS is deleted (StopServerRun). With `force`,
+     * only after a failed stop, the VPS is deleted without saving.
      */
-    public function stop(Server $server, ServerLauncher $launcher): RedirectResponse
+    public function stop(Request $request, Server $server, ServerLauncher $launcher): RedirectResponse
     {
-        $run = $server->activeRun;
-
-        if ($run === null) {
-            Inertia::flash('toast', ['type' => 'info', 'message' => "{$server->name} isn't running."]);
-
-            return back();
-        }
-
-        try {
-            $launcher->stop($run);
-        } catch (CloudException $e) {
-            Inertia::flash('toast', ['type' => 'error', 'message' => "Couldn't delete the VPS: {$e->getMessage()}"]);
-
-            return back();
-        }
-
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Stopped {$server->name}. The VPS is deleted."]);
-
-        return back();
+        return ServerStopController::respond($server, $launcher, 'admin', $request->boolean('force'));
     }
 }

@@ -97,11 +97,18 @@ usePoll(5000, { only: ['servers'] });
                                 class="ml-2 font-mono text-xs"
                                 >{{ server.address }}</span
                             >
+                            <p
+                                v-if="server.error"
+                                class="mt-1 max-w-md text-xs text-destructive"
+                                data-test="server-error"
+                            >
+                                {{ server.error_label }}: {{ server.error }}
+                            </p>
                         </td>
                         <td class="px-4 py-2">
                             <div class="flex justify-end gap-2">
                                 <Form
-                                    v-if="!server.can_start"
+                                    v-if="server.can_stop"
                                     v-bind="
                                         ServerController.stop.form(server.slug)
                                     "
@@ -114,9 +121,67 @@ usePoll(5000, { only: ['servers'] });
                                         size="sm"
                                         :disabled="processing"
                                         :aria-label="`Stop ${server.name}`"
-                                        >Stop</Button
+                                        >{{
+                                            server.status === 'stop_failed'
+                                                ? 'Retry stop'
+                                                : 'Stop'
+                                        }}</Button
                                     >
                                 </Form>
+                                <Dialog v-if="server.can_force_delete">
+                                    <DialogTrigger as-child>
+                                        <Button
+                                            variant="destructive"
+                                            size="sm"
+                                            :aria-label="`Delete the VPS of ${server.name} without saving`"
+                                            >Delete without saving</Button
+                                        >
+                                    </DialogTrigger>
+                                    <DialogContent>
+                                        <Form
+                                            v-bind="
+                                                ServerController.stop.form(
+                                                    server.slug,
+                                                )
+                                            "
+                                            class="space-y-6"
+                                            v-slot="{ processing }"
+                                        >
+                                            <input
+                                                type="hidden"
+                                                name="force"
+                                                value="1"
+                                            />
+                                            <DialogHeader class="space-y-3">
+                                                <DialogTitle
+                                                    >Delete the VPS without
+                                                    saving?</DialogTitle
+                                                >
+                                                <DialogDescription>
+                                                    Everything played since
+                                                    {{ server.name }} started is
+                                                    lost. Only do this when the
+                                                    VPS is broken and "Retry
+                                                    stop" keeps failing.
+                                                </DialogDescription>
+                                            </DialogHeader>
+                                            <DialogFooter class="gap-2">
+                                                <DialogClose as-child>
+                                                    <Button variant="secondary"
+                                                        >Cancel</Button
+                                                    >
+                                                </DialogClose>
+                                                <Button
+                                                    type="submit"
+                                                    variant="destructive"
+                                                    :disabled="processing"
+                                                    data-test="confirm-force-delete"
+                                                    >Delete the VPS</Button
+                                                >
+                                            </DialogFooter>
+                                        </Form>
+                                    </DialogContent>
+                                </Dialog>
                                 <Button variant="outline" size="sm" as-child>
                                     <Link
                                         :href="edit(server.slug)"

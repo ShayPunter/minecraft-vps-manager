@@ -25,6 +25,7 @@ class ServerFactory extends Factory
             'location' => 'fsn1',
             'start_command' => './run.sh',
             'java_version' => 21,
+            'idle_minutes' => 15,
         ];
     }
 

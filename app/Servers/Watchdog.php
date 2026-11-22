@@ -1,0 +1,186 @@
+<?php
+
+namespace App\Servers;
+
+use App\Cloud\CloudException;
+use App\Cloud\CloudProvider;
+use App\Enums\RunStatus;
+use App\Models\ServerRun;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * Keeps the bill down without losing a world (#5283).
+ *
+ *   watch() every minute: moves starting runs on, gives up on runs that never come online,
+ *           and stops online servers nobody has played on for the server's idle minutes.
+ *   sweep() every 10 minutes: deletes VPSes with the app's label that no active run knows,
+ *           retries failed stops, and alerts once on runs older than max_run_hours.
+ */
+class Watchdog
+{
+    public function __construct(
+        private readonly ServerLauncher $launcher,
+        private readonly MinecraftProbe $probe,
+        private readonly CloudProvider $cloud,
+        private readonly Alerter $alerter,
+    ) {}
+
+    public function watch(): void
+    {
+        $this->launcher->advanceActive(force: true);
+        $this->abandonSlowStarts();
+        $this->stopIdleServers();
+    }
+
+    public function sweep(): void
+    {
+        $this->failStuckStops();
+        $this->retryFailedStops();
+        $this->deleteOrphans();
+        $this->alertLongRuns();
+    }
+
+    private function abandonSlowStarts(): void
+    {
+        $minutes = (int) config('minecraft.boot_timeout_minutes');
+
+        ServerRun::query()
+            ->active()
+            ->whereIn('status', [RunStatus::Provisioning, RunStatus::Booting, RunStatus::Starting])
+            ->where('created_at', '<=', now()->subMinutes($minutes))
+            ->with('server')
+            ->get()
+            ->each(function (ServerRun $run) use ($minutes): void {
+                $error = "It wasn't online within {$minutes} minutes of starting, so the VPS was deleted. "
+                    .'Check the start command and the server type.';
+
+                try {
+                    $this->launcher->abandon($run, $error);
+                } catch (CloudException $e) {
+                    Log::warning("Couldn't delete the VPS of slow run {$run->id}: {$e->getMessage()}");
+
+                    return;
+                }
+
+                $this->alerter->send("{$run->server->name} didn't start", $error);
+            });
+    }
+
+    private function stopIdleServers(): void
+    {
+        $port = (int) config('minecraft.port');
+
+        ServerRun::query()
+            ->active()
+            ->where('status', RunStatus::Online)
+            ->whereNotNull('ipv4')
+            ->with('server')
+            ->get()
+            ->each(function (ServerRun $run) use ($port): void {
+                $players = $this->probe->playersOnline((string) $run->ipv4, $port);
+
+                $run->players_online = $players;
+                $run->checked_at = now();
+
+                if ($players !== null && $players > 0) {
+                    $run->last_players_at = now();
+                }
+
+                $run->save();
+
+                // Idle time counts from when it came online (boot time never counts) or
+                // from the last minute someone was on, whichever is later. A server that
+                // stops answering counts as idle: it's either crashed or about to be.
+                $since = $run->last_players_at !== null && $run->online_at !== null && $run->last_players_at->greaterThan($run->online_at)
+                    ? $run->last_players_at
+                    : $run->online_at;
+
+                if ($since !== null && $since->lessThanOrEqualTo(now()->subMinutes($run->server->idle_minutes))) {
+                    $this->launcher->requestStop($run, 'idle');
+                }
+            });
+    }
+
+    /** A stop whose job never finished (the worker died) gets retried like a failed one. */
+    private function failStuckStops(): void
+    {
+        ServerRun::query()
+            ->active()
+            ->where('status', RunStatus::Stopping)
+            ->where('updated_at', '<=', now()->subMinutes((int) config('minecraft.stuck_stop_minutes')))
+            ->with('server')
+            ->get()
+            ->each(fn (ServerRun $run) => $this->launcher->stopFailed($run, "The stop didn't finish (is the queue worker running?)."));
+    }
+
+    private function retryFailedStops(): void
+    {
+        ServerRun::query()
+            ->active()
+            ->where('status', RunStatus::StopFailed)
+            ->get()
+            ->each(fn (ServerRun $run) => $this->launcher->requestStop($run, $run->stop_reason ?? 'retry'));
+    }
+
+    private function deleteOrphans(): void
+    {
+        try {
+            $vpses = $this->cloud->managedServers();
+        } catch (CloudException $e) {
+            Log::warning("Orphan sweep skipped: {$e->getMessage()}");
+
+            return;
+        }
+
+        $active = ServerRun::query()->active()->get(['id', 'provider_server_id']);
+        $knownVpsIds = $active->pluck('provider_server_id')->filter()->all();
+        $activeRunIds = $active->pluck('id')->all();
+        $deleted = [];
+
+        foreach ($vpses as $vps) {
+            // The VPS name ends in the run id (mvm-<slug>-<run>), so a VPS whose run is still
+            // being provisioned (id not saved yet) isn't mistaken for an orphan.
+            $runId = preg_match('/-(\d+)$/', $vps->name, $m) === 1 ? (int) $m[1] : null;
+
+            if (in_array($vps->id, $knownVpsIds, true) || ($runId !== null && in_array($runId, $activeRunIds, true))) {
+                continue;
+            }
+
+            try {
+                $this->cloud->deleteServer($vps->id);
+                $deleted[] = "{$vps->name} ({$vps->id})";
+            } catch (CloudException $e) {
+                Log::warning("Couldn't delete orphan VPS {$vps->id}: {$e->getMessage()}");
+            }
+        }
+
+        if ($deleted !== []) {
+            $this->alerter->send(
+                'Deleted VPSes no server was using',
+                'The sweep found and deleted: '.implode(', ', $deleted).'. No world was saved from them.',
+            );
+        }
+    }
+
+    private function alertLongRuns(): void
+    {
+        $hours = (int) config('minecraft.max_run_hours');
+
+        ServerRun::query()
+            ->active()
+            ->whereNull('long_run_alerted_at')
+            ->where('created_at', '<=', now()->subHours($hours))
+            ->with('server')
+            ->get()
+            ->each(function (ServerRun $run) use ($hours): void {
+                $run->long_run_alerted_at = now();
+                $run->save();
+
+                $this->alerter->send(
+                    "{$run->server->name} has been running for {$hours} hours",
+                    "It was started {$run->created_at?->diffForHumans()} and is {$run->status->label()}. "
+                    .'If nobody is playing, stop it in Admin → Servers.',
+                );
+            });
+    }
+}

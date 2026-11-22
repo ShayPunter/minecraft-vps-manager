@@ -2,7 +2,7 @@
 import { Form } from '@inertiajs/vue3';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { start } from '@/routes/servers';
+import { start, stop } from '@/routes/servers';
 import type { ServerSummary } from '@/types/servers';
 
 defineProps<{
@@ -47,6 +47,24 @@ const busy = ['provisioning', 'booting', 'starting', 'stopping'];
             }}</code>
         </p>
         <p
+            v-if="server.address"
+            class="text-sm text-muted-foreground"
+            data-test="server-players"
+        >
+            <template v-if="server.players_online === null"
+                >Checking who's on…</template
+            >
+            <template v-else-if="server.players_online === 0"
+                >Nobody on. It stops after {{ server.idle_minutes }} minutes
+                with nobody on.</template
+            >
+            <template v-else
+                >{{ server.players_online }}
+                {{ server.players_online === 1 ? 'player' : 'players' }}
+                on</template
+            >
+        </p>
+        <p
             v-else-if="busy.includes(server.status)"
             class="text-sm text-muted-foreground"
         >
@@ -58,7 +76,7 @@ const busy = ['provisioning', 'booting', 'starting', 'stopping'];
             class="text-sm text-destructive"
             data-test="server-error"
         >
-            Last start failed: {{ server.error }}
+            {{ server.error_label }}: {{ server.error }}
         </p>
 
         <Form
@@ -73,6 +91,22 @@ const busy = ['provisioning', 'booting', 'starting', 'stopping'];
                 :disabled="processing"
                 :aria-label="`Start ${server.name}`"
                 >Start</Button
+            >
+        </Form>
+
+        <Form
+            v-if="server.can_stop"
+            v-bind="stop.form(server.slug)"
+            :options="{ preserveScroll: true }"
+            v-slot="{ processing }"
+        >
+            <Button
+                type="submit"
+                variant="outline"
+                size="sm"
+                :disabled="processing"
+                :aria-label="`Stop ${server.name}`"
+                >Stop</Button
             >
         </Form>
     </li>

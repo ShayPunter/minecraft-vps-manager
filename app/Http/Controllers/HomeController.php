@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Server;
 use App\Servers\ServerLauncher;
 use App\Servers\ServerPresenter;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -13,12 +14,12 @@ use Inertia\Response;
  */
 class HomeController extends Controller
 {
-    public function __invoke(ServerLauncher $launcher): Response
+    public function __invoke(Request $request, ServerLauncher $launcher): Response
     {
         $launcher->advanceActive();
 
         return Inertia::render('Welcome', [
-            'servers' => ServerPresenter::list(Server::query()->where('is_public', true)),
+            'servers' => ServerPresenter::list(Server::query()->where('is_public', true), $request->user()),
         ]);
     }
 }

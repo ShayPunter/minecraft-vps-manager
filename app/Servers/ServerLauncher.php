@@ -7,6 +7,7 @@ use App\Cloud\CloudProvider;
 use App\Cloud\ServerSpec;
 use App\Enums\RunStatus;
 use App\Jobs\ProvisionServerRun;
+use App\Jobs\StopServerRun;
 use App\Models\Server;
 use App\Models\ServerRun;
 use App\Models\User;
@@ -22,13 +23,18 @@ use Illuminate\Support\Facades\Log;
  *   start()     → provisioning (and queues ProvisionServerRun)
  *   provision() → booting, or failed when the provider refuses
  *   advance()   → starting once the VPS runs, online once Minecraft takes connections
- *   stop()      → stopping → stopped (VPS deleted)
+ *   requestStop() → stopping (and queues StopServerRun)
+ *   stop()      → saves the world over SSH, deletes the VPS → stopped;
+ *                 stop_failed (VPS kept, alert sent) when either step fails
+ *   abandon()   → failed, VPS deleted (never came online: nothing to save)
  */
 class ServerLauncher
 {
     public function __construct(
         private readonly CloudProvider $cloud,
         private readonly MinecraftProbe $probe,
+        private readonly RemoteShell $shell,
+        private readonly Alerter $alerter,
     ) {}
 
     /**
@@ -91,6 +97,16 @@ class ServerLauncher
             ));
         } catch (CloudException $e) {
             $this->fail($run, "The cloud provider refused to create the VPS: {$e->getMessage()}");
+
+            return;
+        }
+
+        // A stop or a boot timeout may have ended the run while the provider was busy creating
+        // the VPS: then nobody wants it, so it goes straight away instead of waiting for the sweep.
+        $run->refresh();
+
+        if ($run->status !== RunStatus::Provisioning) {
+            $this->cloud->deleteServer($vps->id);
 
             return;
         }
@@ -163,24 +179,113 @@ class ServerLauncher
     }
 
     /**
-     * Delete the VPS and end the run.
+     * Ask for a stop: marks the run "stopping" and queues StopServerRun, which saves the
+     * world and deletes the VPS. False when there's nothing to stop (ended, still being
+     * created, or already stopping).
      *
-     * @throws CloudException when the provider won't delete it (the run stays "stopping")
+     * @param  string  $reason  idle, admin, starter
+     * @param  bool  $force  skip the world save (an admin's "delete without saving" after a failed stop)
      */
-    public function stop(ServerRun $run): void
+    public function requestStop(ServerRun $run, string $reason, bool $force = false): bool
     {
-        if ($run->active_server_id === null) {
+        $stoppable = $force
+            ? [RunStatus::StopFailed]
+            : [RunStatus::Booting, RunStatus::Starting, RunStatus::Online, RunStatus::StopFailed];
+
+        $updated = ServerRun::query()
+            ->whereKey($run->id)
+            ->whereNotNull('active_server_id')
+            ->whereIn('status', $stoppable)
+            ->update(['status' => RunStatus::Stopping, 'stop_reason' => $reason, 'updated_at' => now()]);
+
+        if ($updated === 0) {
+            return false;
+        }
+
+        $run->refresh();
+        StopServerRun::dispatch($run->id, $force);
+
+        return true;
+    }
+
+    /**
+     * Runs in StopServerRun. A run that was online gets a clean Minecraft stop over SSH first
+     * (`systemctl stop`, which saves the world). If that or the delete fails, the VPS is kept
+     * and the run is marked stop_failed with an alert: a world is never lost to save money.
+     */
+    public function stop(ServerRun $run, bool $force = false): void
+    {
+        if ($run->status !== RunStatus::Stopping) {
             return;
         }
 
-        $run->status = RunStatus::Stopping;
-        $run->save();
+        $server = $run->server;
 
+        if (! $force && $run->online_at !== null && $run->ipv4 !== null && $run->provider_server_id !== null) {
+            try {
+                $result = $this->shell->run($run->ipv4, CloudInit::stopCommand($server), 360);
+            } catch (RemoteShellException $e) {
+                $this->stopFailed($run, "Couldn't reach the VPS to save the world: {$e->getMessage()}");
+
+                return;
+            }
+
+            if (! $result->succeeded()) {
+                $output = trim($result->output);
+                $this->stopFailed($run, "Minecraft didn't stop cleanly (exit {$result->exitCode}".($output !== '' ? ": {$output}" : '').').');
+
+                return;
+            }
+        }
+
+        if ($run->provider_server_id !== null) {
+            try {
+                $this->cloud->deleteServer($run->provider_server_id);
+            } catch (CloudException $e) {
+                $this->stopFailed($run, "The world was saved, but the VPS couldn't be deleted: {$e->getMessage()}");
+
+                return;
+            }
+        }
+
+        $this->end($run, RunStatus::Stopped);
+    }
+
+    /**
+     * End a run that never came online (boot timeout): delete the VPS, mark it failed.
+     *
+     * @throws CloudException when the provider won't delete it (the run stays as it was, for the next check)
+     */
+    public function abandon(ServerRun $run, string $error): void
+    {
         if ($run->provider_server_id !== null) {
             $this->cloud->deleteServer($run->provider_server_id);
         }
 
-        $this->end($run, RunStatus::Stopped);
+        $run->stop_reason = 'boot_timeout';
+        $this->fail($run, $error);
+    }
+
+    /**
+     * The stop didn't finish. The VPS is kept and still counts towards the cap; an admin is
+     * told once. The sweep tries again every 10 minutes, and an admin can retry or delete it.
+     */
+    public function stopFailed(ServerRun $run, string $error): void
+    {
+        // A retry keeps the first failure's error until it succeeds: alert once, not every 10 minutes.
+        $alreadyFailed = $run->error !== null;
+        $run->status = RunStatus::StopFailed;
+        $run->error = mb_substr($error, 0, 1000);
+        $run->save();
+
+        if (! $alreadyFailed) {
+            $this->alerter->send(
+                "{$run->server->name} couldn't be stopped",
+                "{$error} The VPS is still running (and costing money) so the world isn't lost. "
+                .'The watchdog tries again every 10 minutes. In Admin → Servers you can retry the stop, '
+                .'or delete the VPS without saving.',
+            );
+        }
     }
 
     private function fail(ServerRun $run, string $error): void

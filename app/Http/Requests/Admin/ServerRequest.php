@@ -52,6 +52,7 @@ class ServerRequest extends FormRequest
             // One line only: a newline would start a second command in the start script.
             'start_command' => ['required', 'string', 'max:500', 'not_regex:/[\r\n\0]/'],
             'java_version' => ['required', 'integer', Rule::in(config('minecraft.java_versions'))],
+            'idle_minutes' => ['required', 'integer', 'min:5', 'max:240'],
         ];
     }
 

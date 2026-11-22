@@ -23,6 +23,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $checked_at
  * @property CarbonImmutable|null $online_at
  * @property CarbonImmutable|null $ended_at
+ * @property int|null $players_online what the last server-list ping said (null: no answer)
+ * @property CarbonImmutable|null $last_players_at the last ping that counted a player
+ * @property string|null $stop_reason idle, admin, starter, boot_timeout
+ * @property CarbonImmutable|null $long_run_alerted_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read Server $server
@@ -65,6 +69,9 @@ class ServerRun extends Model
             'checked_at' => 'datetime',
             'online_at' => 'datetime',
             'ended_at' => 'datetime',
+            'players_online' => 'integer',
+            'last_players_at' => 'datetime',
+            'long_run_alerted_at' => 'datetime',
         ];
     }
 }
