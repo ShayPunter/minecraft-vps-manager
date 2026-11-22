@@ -5,6 +5,7 @@ namespace App\Servers;
 use App\Cloud\CloudException;
 use App\Cloud\CloudProvider;
 use App\Cloud\ServerSpec;
+use App\Dns\Dns;
 use App\Enums\RunStatus;
 use App\Jobs\PrepareServerRun;
 use App\Jobs\ProvisionServerRun;
@@ -43,6 +44,7 @@ class ServerLauncher
         private readonly Alerter $alerter,
         private readonly WorldStorage $storage,
         private readonly Archives $archives,
+        private readonly Dns $dns,
     ) {}
 
     /**
@@ -160,6 +162,8 @@ class ServerLauncher
         $run->status = RunStatus::Booting;
         $run->checked_at = now();
         $run->save();
+
+        $this->pointDns($run);
     }
 
     /**
@@ -210,6 +214,9 @@ class ServerLauncher
 
             if ($vps->isRunning()) {
                 $run->status = RunStatus::Starting;
+                // Once more now the VPS runs: covers an IP that came late, or a DNS hiccup at create.
+                $run->save();
+                $this->pointDns($run);
             }
         }
 
@@ -536,6 +543,25 @@ class ServerLauncher
         $run->save();
 
         $this->releaseKey($run, $run->provider_ssh_key_id);
+
+        try {
+            $this->dns->release($run);
+        } catch (Throwable $e) {
+            Log::warning("Run {$run->id}: DNS record not released, the sweep will: {$e->getMessage()}");
+        }
+    }
+
+    /**
+     * The server's name follows the VPS (#5338). Never in the way of a start: errors are kept
+     * on the run and alerted by Dns itself, anything unexpected is only logged.
+     */
+    private function pointDns(ServerRun $run): void
+    {
+        try {
+            $this->dns->point($run);
+        } catch (Throwable $e) {
+            Log::warning("Run {$run->id}: DNS not updated: {$e->getMessage()}");
+        }
     }
 
     /**

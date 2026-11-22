@@ -72,6 +72,14 @@ const busy = ['provisioning', 'booting', 'starting', 'stopping'];
         </p>
 
         <p
+            v-if="server.dns_error"
+            class="text-sm text-amber-700 dark:text-amber-400"
+            data-test="server-dns-error"
+        >
+            No name for this server: {{ server.dns_error }}
+        </p>
+
+        <p
             v-if="server.error"
             class="text-sm text-destructive"
             data-test="server-error"

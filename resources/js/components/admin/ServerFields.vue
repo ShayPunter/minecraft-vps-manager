@@ -13,8 +13,11 @@ const props = defineProps<{
     errors: Record<string, string | undefined>;
     catalog: ServerCatalog;
     javaVersions: number[];
+    dnsDomain?: string | null;
     server?: ServerDefinition;
 }>();
+
+const subdomain = ref(props.server?.subdomain ?? '');
 
 // In the script, not the template: vue-tsc 3.3.13 misreports templates with https:// attributes.
 const iconPlaceholder = 'https://…';
@@ -260,5 +263,39 @@ const currentTypeRetired = computed(
             is up doesn't count.
         </p>
         <InputError :message="errors.idle_minutes" />
+    </div>
+
+    <div class="grid gap-2">
+        <Label for="subdomain">Subdomain (optional)</Label>
+        <div class="flex items-center gap-2">
+            <Input
+                id="subdomain"
+                v-model="subdomain"
+                name="subdomain"
+                placeholder="atm9"
+                autocomplete="off"
+            />
+            <span
+                v-if="dnsDomain"
+                class="text-sm whitespace-nowrap text-muted-foreground"
+                >.{{ dnsDomain }}</span
+            >
+        </div>
+        <p class="text-sm text-muted-foreground" data-test="subdomain-hint">
+            <template v-if="dnsDomain && subdomain">
+                Players join with
+                <span class="font-mono"
+                    >{{ subdomain.trim().toLowerCase() }}.{{ dnsDomain }}</span
+                >
+                while it runs.
+            </template>
+            <template v-else-if="dnsDomain">
+                A name that points at the VPS while the server runs.
+            </template>
+            <template v-else>
+                Set up Admin → DNS to give servers a name instead of an IP.
+            </template>
+        </p>
+        <InputError :message="errors.subdomain" />
     </div>
 </template>

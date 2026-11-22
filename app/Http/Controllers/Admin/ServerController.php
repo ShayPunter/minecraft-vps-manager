@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Dns\Dns;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\ServerStopController;
 use App\Http\Requests\Admin\ServerRequest;
@@ -37,6 +38,7 @@ class ServerController extends Controller
         return Inertia::render('admin/servers/Create', [
             'catalog' => $catalog->formOptions(),
             'javaVersions' => config('minecraft.java_versions'),
+            'dnsDomain' => app(Dns::class)->saved()?->domain,
         ]);
     }
 
@@ -59,7 +61,8 @@ class ServerController extends Controller
         }
 
         return Inertia::render('admin/servers/Edit', [
-            'server' => $server->only(['id', 'name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes']),
+            'server' => $server->only(['id', 'name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain']),
+            'dnsDomain' => app(Dns::class)->saved()?->domain,
             'catalog' => $catalog->formOptions(),
             'javaVersions' => config('minecraft.java_versions'),
             'world' => [

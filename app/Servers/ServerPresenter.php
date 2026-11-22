@@ -55,9 +55,14 @@ class ServerPresenter
             'is_public' => $server->is_public,
             'status' => $status->value,
             'status_label' => $status->label(),
+            // The server's name once its record points at this VPS (#5338), else the IP.
             'address' => $status === RunStatus::Online && $run?->ipv4 !== null
-                ? $run->ipv4.((int) config('minecraft.port') === 25565 ? '' : ':'.config('minecraft.port'))
+                ? ($run->dns_record_id !== null && $run->dns_name !== null ? $run->dns_name : $run->ipv4)
+                    .((int) config('minecraft.port') === 25565 ? '' : ':'.config('minecraft.port'))
                 : null,
+            'ip_address' => $status === RunStatus::Online ? $run?->ipv4 : null,
+            // Admins only: why the name isn't set (players just see the IP).
+            'dns_error' => $viewer?->isAdmin() === true ? $run?->dns_error : null,
             'players_online' => $status === RunStatus::Online ? $run?->players_online : null,
             'idle_minutes' => $server->idle_minutes,
             'error' => $error,

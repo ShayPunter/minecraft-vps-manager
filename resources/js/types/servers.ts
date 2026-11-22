@@ -19,6 +19,10 @@ export type ServerSummary = {
     status: ServerStatus;
     status_label: string;
     address: string | null;
+    /** The VPS's IP while online, also when address is its DNS name (#5338). */
+    ip_address: string | null;
+    /** Admins only: why the DNS name isn't set. */
+    dns_error: string | null;
     players_online: number | null;
     idle_minutes: number;
     error: string | null;
@@ -63,4 +67,5 @@ export type ServerDefinition = {
     start_command: string;
     java_version: number;
     idle_minutes: number;
+    subdomain: string | null;
 };

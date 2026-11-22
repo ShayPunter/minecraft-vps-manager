@@ -46,5 +46,12 @@ class E2ESeeder extends Seeder
             'email' => 'storage-admin@example.com',
             'created_at' => now()->subYear(),
         ]);
+
+        // dns.spec (#5338), its own admin for the same reason.
+        User::factory()->admin()->create([
+            'name' => 'Dana DNS',
+            'email' => 'dns-admin@example.com',
+            'created_at' => now()->subYear(),
+        ]);
     }
 }

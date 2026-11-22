@@ -27,19 +27,23 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int $java_version
  * @property int $idle_minutes minutes with nobody on before the watchdog stops it
  * @property int|null $current_world_archive_id the archive the next start downloads (#5288)
+ * @property string|null $subdomain its name inside the DNS zone, e.g. "atm9" → atm9.<domain> (#5338)
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read ServerRun|null $activeRun
  * @property-read ServerRun|null $latestRun
  * @property-read WorldArchive|null $currentWorldArchive
  */
-#[Fillable(['name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes'])]
+#[Fillable(['name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain'])]
 class Server extends Model
 {
     /** @use HasFactory<ServerFactory> */
     use HasFactory;
 
     public const SLUG_PATTERN = '/^[a-z0-9]+(?:-[a-z0-9]+)*$/';
+
+    // One or more DNS labels: "atm9", "mc.atm9" (#5338).
+    public const SUBDOMAIN_PATTERN = '/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/';
 
     /**
      * @return HasMany<ServerRun, $this>

@@ -15,6 +15,7 @@ const props = defineProps<{
     server: ServerDefinition;
     catalog: ServerCatalog;
     javaVersions: number[];
+    dnsDomain: string | null;
     world: {
         archives: {
             id: number;
@@ -87,6 +88,7 @@ defineOptions({
                 :errors="errors"
                 :catalog="catalog"
                 :java-versions="javaVersions"
+                :dns-domain="dnsDomain"
                 :server="props.server"
             />
 

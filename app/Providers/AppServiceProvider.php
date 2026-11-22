@@ -5,6 +5,9 @@ namespace App\Providers;
 use App\Cloud\CloudProvider;
 use App\Cloud\FakeCloudProvider;
 use App\Cloud\HetznerCloud;
+use App\Dns\CloudflareDns;
+use App\Dns\DnsProvider;
+use App\Dns\FakeDnsProvider;
 use App\Servers\FakeMinecraftProbe;
 use App\Servers\FakeRemoteShell;
 use App\Servers\MinecraftProbe;
@@ -58,6 +61,15 @@ class AppServiceProvider extends ServiceProvider
             }
 
             return new SshRemoteShell((string) config('services.hetzner.legacy_ssh_private_key_path'));
+        });
+
+        // Tests and E2E never call Cloudflare (#5338).
+        $this->app->singleton(DnsProvider::class, function ($app): DnsProvider {
+            if ($app->environment('testing', 'e2e') || config('services.cloudflare.fake') === true) {
+                return new FakeDnsProvider($app->make(CacheRepository::class));
+            }
+
+            return new CloudflareDns((string) config('services.cloudflare.base_url'));
         });
 
         // Tests and E2E keep worlds in a local folder, whatever the settings say (#5288).

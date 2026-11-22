@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { FolderGit2, HardDrive, LayoutGrid, Server, Users } from '@lucide/vue';
+import {
+    FolderGit2,
+    Globe,
+    HardDrive,
+    LayoutGrid,
+    Server,
+    Users,
+} from '@lucide/vue';
 import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
@@ -16,6 +23,7 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
+import { edit as adminDns } from '@/routes/admin/dns';
 import { index as adminServers } from '@/routes/admin/servers';
 import { index as adminUsers } from '@/routes/admin/users';
 import { edit as adminWorldStorage } from '@/routes/admin/world-storage';
@@ -38,6 +46,7 @@ const mainNavItems = computed<NavItem[]>(() => [
                   href: adminWorldStorage(),
                   icon: HardDrive,
               },
+              { title: 'DNS', href: adminDns(), icon: Globe },
           ]
         : []),
 ]);

@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Cloud\CloudException;
 use App\Cloud\CloudProvider;
+use App\Dns\Dns;
 use App\Enums\Role;
 use App\Jobs\QueueHeartbeat;
 use App\Models\User;
@@ -29,7 +30,7 @@ class Doctor extends Command
     /** @var list<array{string, string, string}> */
     private array $rows = [];
 
-    public function handle(CloudProvider $cloud, WorldStorage $storage): int
+    public function handle(CloudProvider $cloud, WorldStorage $storage, Dns $dns): int
     {
         $this->checkAppUrl();
         $this->checkHetzner($cloud);
@@ -38,6 +39,7 @@ class Doctor extends Command
         $this->checkScheduler();
         $this->checkAdmins();
         $this->checkWorldStorage($storage);
+        $this->checkDns($dns);
         $this->checkAlerts();
 
         $this->table(['', 'Check', 'Details'], $this->rows);
@@ -174,6 +176,27 @@ class Doctor extends Command
         $test->ok
             ? $this->row('OK', 'World storage', "{$where}: connected and writable.")
             : $this->row('FAIL', 'World storage', "{$where}: {$test->message}");
+    }
+
+    /**
+     * Optional (#5338), so never a FAIL: without it players use the IP. When it's set up, the
+     * same test as Admin → DNS (a TXT record made and deleted).
+     */
+    private function checkDns(Dns $dns): void
+    {
+        $zone = $dns->zone();
+
+        if ($zone === null) {
+            $this->row('WARN', 'DNS', ((string) $dns->problem()).' Optional: set it up in Admin → DNS to give servers a name.');
+
+            return;
+        }
+
+        $error = $dns->test($zone);
+
+        $error === null
+            ? $this->row('OK', 'DNS', "The token can edit {$zone->domain}'s DNS.")
+            : $this->row('WARN', 'DNS', "{$zone->domain}: {$error} Servers still start; players use the IP.");
     }
 
     private function checkAlerts(): void
