@@ -99,6 +99,12 @@ output. Run with the real binary:
   `MVM_ALERT_DISCORD_WEBHOOK`). Admin → Servers then offers Retry stop and "Delete without
   saving" (`force=1`, only for `stop_failed`). World upload (#5288) goes between the SSH
   stop and the delete. `provision()` deletes a VPS that arrives after its run ended.
+- `app:doctor` (#5285): APP_URL https, Hetzner token (one read-only `locations()` call),
+  SSH pair readable and matching (phpseclib derives the public half), queue worker (queues
+  `QueueHeartbeat` and waits `--wait` s, 15 by default), scheduler (`servers:watch` beat in
+  the last 3 minutes), an admin exists, where alerts go. `App\Support\Heartbeat` keeps the
+  beats in the cache as ISO strings; `servers:sweep` also queues a `QueueHeartbeat`. FAIL =
+  exit 1, WARN doesn't fail. Never prints a secret (tested). The Forge setup steps are in the README.
 - Who can stop: admins (Admin → Servers, or the dashboard), and the signed-in user who
   started the run (`POST /servers/{slug}/stop`, 404 for anyone else; `ServerPresenter::mayStop`).
   Guest-started public servers stop by the watchdog or an admin.
