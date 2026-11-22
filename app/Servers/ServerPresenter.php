@@ -18,6 +18,9 @@ class ServerPresenter
     /** A run in one of these can be stopped by hand (provisioning can't: no VPS yet). */
     private const STOPPABLE = [RunStatus::Booting, RunStatus::Starting, RunStatus::Online, RunStatus::StopFailed];
 
+    /** Between Start and Online. */
+    private const STARTING = [RunStatus::Provisioning, RunStatus::Booting, RunStatus::Starting];
+
     /**
      * @param  Builder<Server>  $query
      * @return Collection<int, array<string, mixed>>
@@ -69,6 +72,7 @@ class ServerPresenter
             // this answer, so the page counts down without trusting the viewer's clock.
             // 0 = due: the watchdog's next minute stops it. Null unless online.
             ...self::idleStop($status === RunStatus::Online ? $run : null, $server->idle_minutes),
+            ...self::bootEstimate($server, $run, $status),
             'error' => $error,
             'error_label' => $errorLabel,
             'can_start' => $run === null,
@@ -87,6 +91,28 @@ class ServerPresenter
         return [
             'stops_at' => $stopsAt?->toIso8601String(),
             'stops_in_seconds' => $stopsAt === null ? null : max(0, (int) now()->diffInSeconds($stopsAt, false)),
+        ];
+    }
+
+    /**
+     * How long a start usually takes (#5379), sent while it can be started or is starting,
+     * and how long this start has been going, from the server's clock.
+     *
+     * @return array{typical_boot_seconds: int|null, boot_elapsed_seconds: int|null}
+     */
+    private static function bootEstimate(Server $server, ?ServerRun $run, RunStatus $status): array
+    {
+        $starting = $run !== null && in_array($status, self::STARTING, true);
+
+        if ($run !== null && ! $starting) {
+            return ['typical_boot_seconds' => null, 'boot_elapsed_seconds' => null];
+        }
+
+        return [
+            'typical_boot_seconds' => BootEstimate::typicalSeconds($server),
+            'boot_elapsed_seconds' => $starting && $run->created_at !== null
+                ? max(0, (int) $run->created_at->diffInSeconds(now()))
+                : null,
         ];
     }
 

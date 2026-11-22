@@ -84,6 +84,12 @@ output. Run with the real binary:
   with nobody on, counted from `online_at` or the last ping with players, so boot time never
   counts; `ServerRun::idleStopsAt()`, which `ServerPresenter` also sends as `stops_at` +
   `stops_in_seconds` so the pages count down to the same minute with `useCountdown`, #5378).
+  Start estimates (#5379, `App\Servers\BootEstimate`): median Start → Online of the
+  server's last 5 runs that came online, installs (installable software, run without a
+  world archive) and ordinary starts counted apart, else the newest 20 across all servers.
+  The presenter sends `typical_boot_seconds` (stopped or starting) and
+  `boot_elapsed_seconds` (starting); `ServerCard` shows "Usually ready in about N min.",
+  "About N min left." and "Any moment now.".
   `servers:sweep` every 10 minutes (stuck `stopping` → `stop_failed`; retry
   `stop_failed`; delete managed VPSes no active run knows, matching the run id at the end of
   the VPS name so a run still provisioning isn't hit; one alert per run older than

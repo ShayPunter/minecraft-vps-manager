@@ -29,6 +29,10 @@ export type ServerSummary = {
     stops_at: string | null;
     /** Seconds left at the time of the answer (0 = due); null unless online. */
     stops_in_seconds: number | null;
+    /** Median Start → Online of recent starts (#5379); null without history or once online. */
+    typical_boot_seconds: number | null;
+    /** Seconds since Start while starting, else null. */
+    boot_elapsed_seconds: number | null;
     error: string | null;
     error_label: string | null;
     can_start: boolean;

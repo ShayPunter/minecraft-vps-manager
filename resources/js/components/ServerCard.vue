@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form } from '@inertiajs/vue3';
+import BootEstimateNote from '@/components/BootEstimateNote.vue';
 import IdleStopNote from '@/components/IdleStopNote.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -58,7 +59,20 @@ const busy = ['provisioning', 'booting', 'starting', 'stopping'];
             v-else-if="busy.includes(server.status)"
             class="text-sm text-muted-foreground"
         >
-            This takes a few minutes. The page updates by itself.
+            <template
+                v-if="
+                    server.boot_elapsed_seconds !== null &&
+                    server.typical_boot_seconds !== null
+                "
+            >
+                <span data-test="server-boot-left"
+                    ><BootEstimateNote :server="server"
+                /></span>
+                The page updates by itself.
+            </template>
+            <template v-else
+                >This takes a few minutes. The page updates by itself.</template
+            >
         </p>
 
         <p
@@ -90,6 +104,12 @@ const busy = ['provisioning', 'booting', 'starting', 'stopping'];
                 :aria-label="`Start ${server.name}`"
                 >Start</Button
             >
+            <span
+                v-if="server.typical_boot_seconds !== null"
+                class="ml-3 text-sm text-muted-foreground"
+                data-test="server-boot-estimate"
+                ><BootEstimateNote :server="server"
+            /></span>
         </Form>
 
         <Form

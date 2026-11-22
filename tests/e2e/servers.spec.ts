@@ -216,5 +216,10 @@ test('the player who started a server stops it from the dashboard', async ({
     await expect(
         card.getByRole('button', { name: 'Start Weekend Survival' }),
     ).toBeVisible();
+    // It came online once, so the next start has an estimate (#5379). The fake VPS
+    // boots in seconds, which rounds up to a minute.
+    await expect(card.locator('[data-test="server-boot-estimate"]')).toHaveText(
+        'Usually ready in about 1 min.',
+    );
     await playerContext.close();
 });
