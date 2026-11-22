@@ -285,18 +285,35 @@ class HetznerCloudTest extends TestCase
     {
         Http::fake([
             self::API.'/server_types?*' => Http::response([
+                // The shape since 2 Nov 2026: no type-wide `deprecated`, deprecation per location (#5321).
                 'server_types' => [
                     [
                         'id' => 1, 'name' => 'cx43', 'description' => 'CX43', 'cores' => 8, 'memory' => 16.0, 'disk' => 160,
-                        'deprecated' => false, 'deprecation' => null, 'storage_type' => 'local', 'cpu_type' => 'shared', 'architecture' => 'x86',
+                        'deprecation' => null, 'storage_type' => 'local', 'cpu_type' => 'shared', 'architecture' => 'x86', 'category' => 'Shared vCPU',
+                        'locations' => [['id' => 1, 'name' => 'fsn1', 'deprecation' => null, 'available' => true, 'recommended' => true]],
                         'prices' => [
                             ['location' => 'fsn1', 'price_hourly' => ['net' => '0.0160', 'gross' => '0.0190'], 'price_monthly' => ['net' => '9.9900', 'gross' => '11.8881'], 'included_traffic' => 21990232555520, 'price_per_tb_traffic' => ['net' => '1.0000', 'gross' => '1.1900']],
                         ],
                     ],
                     [
-                        'id' => 2, 'name' => 'cx11', 'description' => 'CX11', 'cores' => 1, 'memory' => 2, 'disk' => 20,
-                        'deprecated' => true, 'deprecation' => ['unavailable_after' => '2024-09-01T00:00:00+00:00', 'announced' => '2024-06-01T00:00:00+00:00'],
-                        'cpu_type' => 'shared', 'architecture' => 'x86', 'prices' => [],
+                        // Retired in fsn1, still sold in hel1, and Hetzner still lists fsn1's price.
+                        'id' => 2, 'name' => 'cpx21', 'description' => 'CPX21', 'cores' => 3, 'memory' => 4, 'disk' => 80,
+                        'deprecation' => null, 'cpu_type' => 'shared', 'architecture' => 'x86', 'category' => 'Shared vCPU',
+                        'locations' => [
+                            ['id' => 1, 'name' => 'fsn1', 'deprecation' => ['unavailable_after' => '2026-01-01T00:00:00+00:00', 'announced' => '2025-10-01T00:00:00+00:00'], 'available' => false, 'recommended' => false],
+                            ['id' => 3, 'name' => 'hel1', 'deprecation' => null, 'available' => true, 'recommended' => false],
+                        ],
+                        'prices' => [
+                            ['location' => 'fsn1', 'price_hourly' => ['net' => '0.0100', 'gross' => '0.0119'], 'price_monthly' => ['net' => '7.0000', 'gross' => '8.3300']],
+                            ['location' => 'hel1', 'price_hourly' => ['net' => '0.0100', 'gross' => '0.0119'], 'price_monthly' => ['net' => '7.0000', 'gross' => '8.3300']],
+                        ],
+                    ],
+                    [
+                        // No category in the answer: grouped by CPU type.
+                        'id' => 3, 'name' => 'ccx13', 'description' => 'CCX13 Dedicated CPU', 'cores' => 2, 'memory' => 8, 'disk' => 80,
+                        'cpu_type' => 'dedicated', 'architecture' => 'x86',
+                        'locations' => [['id' => 1, 'name' => 'fsn1', 'deprecation' => null]],
+                        'prices' => [['location' => 'fsn1', 'price_hourly' => ['net' => '0.0600', 'gross' => '0.0714'], 'price_monthly' => ['net' => '35.0000', 'gross' => '41.6500']]],
                     ],
                 ],
                 'meta' => ['pagination' => ['page' => 1, 'next_page' => null]],
@@ -308,20 +325,51 @@ class HetznerCloudTest extends TestCase
         ]);
 
         $client = $this->client();
-        [$cx43, $cx11] = $client->serverTypes();
+        [$cx43, $cpx21, $ccx13] = $client->serverTypes();
 
         $this->assertSame('cx43', $cx43->name);
         $this->assertSame(16.0, $cx43->memoryGb);
-        $this->assertSame(['fsn1' => '11.8881'], $cx43->monthlyGrossPrices);
+        $this->assertSame('Shared vCPU', $cx43->category);
+        $this->assertSame(['fsn1' => ['monthly' => '11.8881', 'hourly' => '0.0190']], $cx43->grossPrices);
         $this->assertTrue($cx43->availableIn('fsn1'));
         $this->assertFalse($cx43->availableIn('hel1'));
-        $this->assertFalse($cx43->deprecated);
-        $this->assertTrue($cx11->deprecated);
+        $this->assertSame([], $cx43->retiredIn);
+
+        $this->assertFalse($cpx21->availableIn('fsn1'));
+        $this->assertTrue($cpx21->retiredIn('fsn1'));
+        $this->assertTrue($cpx21->availableIn('hel1'));
+        $this->assertSame(['hel1'], array_keys($cpx21->grossPrices));
+
+        $this->assertSame('Dedicated vCPU', $ccx13->category);
+        $this->assertTrue($ccx13->availableIn('fsn1'));
 
         $locations = $client->locations();
         $this->assertSame('fsn1', $locations[0]->name);
         $this->assertSame('Falkenstein', $locations[0]->city);
         $this->assertSame('DE', $locations[0]->country);
+    }
+
+    public function test_an_answer_without_per_location_info_falls_back_to_the_type_wide_deprecation(): void
+    {
+        $price = ['location' => 'fsn1', 'price_hourly' => ['gross' => '0.0100'], 'price_monthly' => ['gross' => '6.0000']];
+
+        Http::fake([
+            self::API.'/server_types?*' => Http::response([
+                'server_types' => [
+                    ['id' => 1, 'name' => 'cx33', 'description' => 'CX33', 'cores' => 4, 'memory' => 8, 'disk' => 80, 'cpu_type' => 'shared', 'architecture' => 'x86', 'deprecation' => null, 'prices' => [$price]],
+                    ['id' => 2, 'name' => 'cx11', 'description' => 'CX11', 'cores' => 1, 'memory' => 2, 'disk' => 20, 'cpu_type' => 'shared', 'architecture' => 'x86',
+                        'deprecation' => ['unavailable_after' => '2024-09-01T00:00:00+00:00', 'announced' => '2024-06-01T00:00:00+00:00'], 'prices' => [$price]],
+                ],
+                'meta' => ['pagination' => ['page' => 1, 'next_page' => null]],
+            ]),
+        ]);
+
+        [$cx33, $cx11] = $this->client()->serverTypes();
+
+        $this->assertTrue($cx33->availableIn('fsn1'));
+        $this->assertSame('Shared vCPU', $cx33->category);
+        $this->assertFalse($cx11->availableIn('fsn1'));
+        $this->assertTrue($cx11->retiredIn('fsn1'));
     }
 
     /**

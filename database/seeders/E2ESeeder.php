@@ -31,5 +31,13 @@ class E2ESeeder extends Seeder
             'email' => 'starter@example.com',
             'created_at' => now()->subYear(),
         ]);
+
+        // server-types.spec: its own admin, so the suite stays under Fortify's
+        // 5 logins a minute per email for admin@example.com (#5321).
+        User::factory()->admin()->create([
+            'name' => 'Casey Catalog',
+            'email' => 'catalog-admin@example.com',
+            'created_at' => now()->subYear(),
+        ]);
     }
 }

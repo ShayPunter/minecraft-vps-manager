@@ -90,10 +90,17 @@ class FakeCloudProvider implements CloudProvider
      */
     public function serverTypes(): array
     {
+        $everywhere = fn (string $monthly, string $hourly, array $locations = ['fsn1', 'nbg1', 'hel1']): array => array_fill_keys($locations, ['monthly' => $monthly, 'hourly' => $hourly]);
+
         return [
-            new ServerType('cx33', 'CX33', 4, 8, 80, 'shared', 'x86', false, ['fsn1' => '6.4900', 'nbg1' => '6.4900', 'hel1' => '6.4900']),
-            new ServerType('cx43', 'CX43', 8, 16, 160, 'shared', 'x86', false, ['fsn1' => '11.9900', 'nbg1' => '11.9900', 'hel1' => '11.9900']),
-            new ServerType('ccx23', 'CCX23 Dedicated', 4, 16, 160, 'dedicated', 'x86', false, ['fsn1' => '31.4900', 'nbg1' => '31.4900']),
+            new ServerType('cx43', 'CX43', 8, 16, 160, 'shared', 'x86', 'Shared vCPU', $everywhere('11.9900', '0.0192')),
+            new ServerType('cx33', 'CX33', 4, 8, 80, 'shared', 'x86', 'Shared vCPU', $everywhere('6.4900', '0.0104')),
+            new ServerType('cax31', 'CAX31', 8, 16, 160, 'shared', 'arm', 'Shared vCPU', $everywhere('12.4900', '0.0200', ['fsn1', 'nbg1'])),
+            new ServerType('ccx23', 'CCX23 Dedicated', 4, 16, 160, 'dedicated', 'x86', 'Dedicated vCPU', $everywhere('31.4900', '0.0505', ['fsn1', 'nbg1'])),
+            // Retired everywhere, as CPX11/CPX21 are at Hetzner: must not be offered.
+            new ServerType('cpx21', 'CPX21', 3, 4, 80, 'shared', 'x86', 'Shared vCPU', [], ['fsn1', 'nbg1', 'hel1']),
+            // Retired in Germany only.
+            new ServerType('cx53', 'CX53', 16, 32, 320, 'shared', 'x86', 'Shared vCPU', $everywhere('22.4900', '0.0360', ['hel1']), ['fsn1', 'nbg1']),
         ];
     }
 

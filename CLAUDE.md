@@ -116,6 +116,14 @@ output. Run with the real binary:
 - `ServerCatalog` caches the provider's types/locations for an hour as plain arrays
   (`config/cache.php` has `serializable_classes => false`, so objects can't be cached).
   Default for new servers: cheapest non-deprecated type with ≥ 8 GB in the first German location.
+  Hetzner marks retired types **per location** (`server_types[].locations[].deprecation`;
+  the type-wide `deprecated` was removed on 2 Nov 2026, and reading it showed CPX11/CPX21 as
+  current, #5321). `ServerType::$grossPrices` holds only locations where the type can still be
+  ordered (monthly + hourly gross), `$retiredIn` the deprecated ones, `$category` Hetzner's
+  grouping ("Shared vCPU"; falls back to CPU type). The admin form groups by it in
+  `<optgroup>`s, cheapest first. The cache key is versioned (`mvm:catalog:v2`): bump it when
+  `ServerType`'s fields change, or the cached arrays no longer fit the constructor.
+  E2E's `server-types.spec` signs in as `catalog-admin@example.com` (Fortify's login limit).
 - The welcome page has no app layout, so it mounts its own `<Toaster />`.
 - `App\Cloud` (#5281): `CloudProvider` interface (create/find/delete server, managed
   servers, server types, locations), `HetznerCloud` (Laravel `Http::`, token and SSH key path

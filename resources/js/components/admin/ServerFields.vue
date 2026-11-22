@@ -3,7 +3,11 @@ import { computed, ref } from 'vue';
 import InputError from '@/components/InputError.vue';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import type { ServerCatalog, ServerDefinition } from '@/types/servers';
+import type {
+    ServerCatalog,
+    ServerDefinition,
+    ServerTypeOption,
+} from '@/types/servers';
 
 const props = defineProps<{
     errors: Record<string, string | undefined>;
@@ -27,9 +31,33 @@ const location = ref(
 const serverType =
     props.server?.server_type ?? props.catalog.defaults.server_type ?? '';
 
-// Only types sold in the chosen location, with that location's price.
-const typesHere = computed(() =>
-    props.catalog.types.filter((type) => location.value in type.prices),
+// Only types that can be ordered in the chosen location, grouped by the provider's
+// category, cheapest first; groups ordered by their cheapest type (#5321).
+const groupsHere = computed(() => {
+    const here = props.catalog.types
+        .filter((type) => location.value in type.prices)
+        .sort(
+            (a, b) =>
+                a.prices[location.value].sort - b.prices[location.value].sort,
+        );
+    const groups = new Map<string, ServerTypeOption[]>();
+
+    for (const type of here) {
+        groups.set(type.group, [...(groups.get(type.group) ?? []), type]);
+    }
+
+    return [...groups].map(([name, types]) => ({ name, types }));
+});
+
+// An existing server whose type has since been retired here keeps it until edited.
+const currentTypeRetired = computed(
+    () =>
+        props.server !== undefined &&
+        serverType !== '' &&
+        props.catalog.types.length > 0 &&
+        !groupsHere.value.some((group) =>
+            group.types.some((type) => type.name === serverType),
+        ),
 );
 </script>
 
@@ -145,14 +173,24 @@ const typesHere = computed(() =>
             name="server_type"
             :class="selectClass"
         >
-            <option
-                v-for="option in typesHere"
-                :key="option.name"
-                :value="option.name"
-                :selected="option.name === serverType"
-            >
-                {{ option.label }} · {{ option.prices[location] }}
+            <option v-if="currentTypeRetired" :value="serverType" selected>
+                {{ serverType }} (can't be ordered here)
             </option>
+            <optgroup
+                v-for="group in groupsHere"
+                :key="group.name"
+                :label="group.name"
+            >
+                <option
+                    v-for="option in group.types"
+                    :key="option.name"
+                    :value="option.name"
+                    :selected="option.name === serverType"
+                >
+                    {{ option.label }} · {{ option.prices[location].hourly }} ·
+                    {{ option.prices[location].monthly }}
+                </option>
+            </optgroup>
         </select>
         <Input
             v-else
@@ -161,6 +199,14 @@ const typesHere = computed(() =>
             :default-value="serverType"
             required
         />
+        <p
+            v-if="currentTypeRetired"
+            class="text-sm text-destructive"
+            data-test="type-retired"
+        >
+            {{ serverType }} can't be ordered in this location any more. Pick
+            another type before saving.
+        </p>
         <p class="text-sm text-muted-foreground">
             Billed by the hour, only while the server runs.
         </p>

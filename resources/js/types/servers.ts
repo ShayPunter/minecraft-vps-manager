@@ -28,10 +28,20 @@ export type ServerSummary = {
     can_force_delete: boolean;
 };
 
+export type ServerTypePrice = {
+    hourly: string;
+    monthly: string;
+    /** Gross monthly EUR, for sorting. */
+    sort: number;
+};
+
 export type ServerTypeOption = {
     name: string;
     label: string;
-    prices: Record<string, string>;
+    /** The provider's category, e.g. "Shared vCPU" (#5321). */
+    group: string;
+    /** Only the locations where the type can still be ordered. */
+    prices: Record<string, ServerTypePrice>;
 };
 
 export type ServerCatalog = {
