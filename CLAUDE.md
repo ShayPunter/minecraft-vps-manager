@@ -132,6 +132,12 @@ output. Run with the real binary:
   where alerts go. `App\Support\Heartbeat` keeps the
   beats in the cache as ISO strings; `servers:sweep` also queues a `QueueHeartbeat`. FAIL =
   exit 1, WARN doesn't fail. Never prints a secret (tested). The Forge setup steps are in the README.
+- Cloudflare (#5703): the site answers through Cloudflare, so `bootstrap/app.php` trusts
+  X-Forwarded-For/-Proto from Cloudflare's published ranges only (`config/trustedproxy.php`,
+  copied from MCPacks; `TRUSTED_PROXIES` replaces the list). `$request->ip()` is then the
+  visitor, or the VPS for the log shipper, for every per-IP limit and `started_from_ip`.
+  Any other address keeps REMOTE_ADDR (`TrustedProxyTest`). Update the ranges from
+  https://www.cloudflare.com/ips if Cloudflare adds one.
 - Run errors (`server_runs.error`: script output, SSH/provider messages, storage user@host,
   IPs) go to admins only (#5527): `ServerPresenter::errorFor()` gives everyone else
   `PUBLIC_ERROR` on the cards and in the start/stop toasts; the label still shows.
