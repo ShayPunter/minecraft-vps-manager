@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { Head, usePage, usePoll } from '@inertiajs/vue3';
+import { Head, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import Heading from '@/components/Heading.vue';
 import ServerCard from '@/components/ServerCard.vue';
+import { useStatusPoll } from '@/composables/useStatusPoll';
 import { dashboard } from '@/routes';
 import type { ServerSummary } from '@/types/servers';
 
-defineProps<{
+const props = defineProps<{
     servers: ServerSummary[];
 }>();
 
@@ -24,8 +25,8 @@ defineOptions({
 const page = usePage();
 const user = computed(() => page.props.auth.user);
 
-// Statuses move on server side; reload just the list every few seconds.
-usePoll(5000, { only: ['servers'] });
+// Statuses move on server side; reload just the list (every 5 s while one is moving).
+useStatusPoll(() => props.servers.map((server) => server.status), ['servers']);
 </script>
 
 <template>

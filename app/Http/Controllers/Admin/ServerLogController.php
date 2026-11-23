@@ -55,6 +55,8 @@ class ServerLogController extends Controller
             ],
             'lines' => $lines,
             'retentionDays' => RunLog::RETENTION_DAYS,
+            // The live view keeps at most this many lines, like the run itself (#5753).
+            'maxLines' => RunLog::MAX_LINES,
         ]);
     }
 

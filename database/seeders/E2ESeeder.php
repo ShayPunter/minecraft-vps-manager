@@ -117,6 +117,15 @@ class E2ESeeder extends Seeder
             'email' => 'waker-admin@example.com',
             'created_at' => now()->subYear(),
         ]);
+
+        // performance.spec (#5753): one admin per test, for Fortify's login limit.
+        foreach (['polls', 'log', 'layout'] as $name) {
+            User::factory()->admin()->create([
+                'name' => 'Perry '.ucfirst($name),
+                'email' => "perf-{$name}-admin@example.com",
+                'created_at' => now()->subYear(),
+            ]);
+        }
     }
 
     /** Base32; tests/e2e/two-factor.spec.ts makes the codes from them. */

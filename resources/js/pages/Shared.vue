@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { Head, usePoll } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
 import ServerCard from '@/components/ServerCard.vue';
 import { Toaster } from '@/components/ui/sonner';
+import { useStatusPoll } from '@/composables/useStatusPoll';
 import type { ServerSummary } from '@/types/servers';
 
 // A link-only server's share page (#5462): this one server, for anyone with the link.
-defineProps<{
+const props = defineProps<{
     server: ServerSummary;
     token: string;
 }>();
 
-usePoll(5000, { only: ['server'] });
+useStatusPoll(() => [props.server.status], ['server']);
 </script>
 
 <template>
