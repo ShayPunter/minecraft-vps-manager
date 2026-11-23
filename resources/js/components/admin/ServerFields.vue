@@ -5,6 +5,7 @@ import InputError from '@/components/InputError.vue';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type {
+    GuestStartLimits,
     ServerCatalog,
     ServerDefinition,
     ServerTypeOption,
@@ -21,6 +22,7 @@ const props = defineProps<{
     dnsDomain?: string | null;
     server?: ServerDefinition;
     hasSavedWorld?: boolean;
+    guestStarts?: GuestStartLimits;
 }>();
 
 // What it runs (#5351). New servers default to Vanilla at the newest release, unless the
@@ -90,6 +92,34 @@ const visibilityOptions: {
             'Only people with its share link see it, and they need no account. The link is shown here once you save.',
     },
 ];
+
+// Guest-start limits (#5526), shown for servers guests can start (public, link only).
+// Same rules as App\Servers\GuestStarts.
+const guestStartsText = computed((): string | null => {
+    const limits = props.guestStarts;
+
+    if (!limits || visibility.value === 'private') {
+        return null;
+    }
+
+    if (limits.per_day === 0) {
+        return "Guests can't start it: only signed-in players can (MVM_GUEST_STARTS_PER_DAY is 0).";
+    }
+
+    if (limits.free_slots >= limits.max_running) {
+        return `Guests can't start it: all ${limits.max_running} server slots are kept for signed-in players (MVM_GUEST_FREE_SLOTS).`;
+    }
+
+    const times = limits.per_day === 1 ? 'once' : `${limits.per_day} times`;
+    const today =
+        limits.used_today === null ? '' : ` (${limits.used_today} today)`;
+    const slots =
+        limits.free_slots === 0
+            ? 'whenever a server slot is free'
+            : `only while ${limits.free_slots} of the ${limits.max_running} server slots stay free for signed-in players`;
+
+    return `Guests who aren't signed in can start it ${times} a day${today}, and ${slots}. Signed-in players aren't limited.`;
+});
 
 // In the script, not a template attribute: vue-tsc 3.3.13 misreads "https://" there.
 const eulaUrl = 'https://aka.ms/MinecraftEULA';
@@ -210,6 +240,13 @@ const currentTypeRetired = computed(
                 visibilityOptions.find((o) => o.value === visibility)
                     ?.description
             }}
+        </p>
+        <p
+            v-if="guestStartsText"
+            class="text-sm text-muted-foreground"
+            data-test="guest-starts"
+        >
+            {{ guestStartsText }}
         </p>
         <InputError :message="errors.visibility" />
     </div>

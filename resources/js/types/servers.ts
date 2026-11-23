@@ -66,6 +66,14 @@ export type ServerCatalog = {
     error: string | null;
 };
 
+// Limits on starts by guests (#5526), from App\Servers\GuestStarts::props().
+export type GuestStartLimits = {
+    per_day: number;
+    free_slots: number;
+    max_running: number;
+    used_today: number | null;
+};
+
 export type ServerDefinition = {
     id: number;
     name: string;
