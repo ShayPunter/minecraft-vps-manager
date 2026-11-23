@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Dns\Dns;
+use App\Enums\Visibility;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\ServerStopController;
 use App\Http\Requests\Admin\ServerRequest;
@@ -69,8 +70,10 @@ class ServerController extends Controller
 
         return Inertia::render('admin/servers/Edit', [
             'server' => [
-                ...$server->only(['id', 'name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'minecraft_version']),
+                ...$server->only(['id', 'name', 'slug', 'description', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'minecraft_version']),
                 'software' => $server->software->value,
+                'visibility' => $server->visibility->value,
+                'share_url' => $server->shareUrl(),
                 'eula_accepted_at' => $server->eula_accepted_at?->toIso8601String(),
                 'eula_accepted_by' => $server->eulaAcceptor?->name,
             ],
@@ -107,6 +110,24 @@ class ServerController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => "Saved {$server->name}. Changes apply from the next start."]);
 
         return to_route('admin.servers.index');
+    }
+
+    /**
+     * New share link for a link-only server (#5462): the old one stops working at once.
+     */
+    public function regenerateShareLink(Server $server): RedirectResponse
+    {
+        if ($server->visibility !== Visibility::Link) {
+            Inertia::flash('toast', ['type' => 'error', 'message' => "{$server->name} isn't link only, so it has no share link."]);
+
+            return back();
+        }
+
+        $server->regenerateShareToken();
+        Log::info('Share link replaced', ['server' => $server->slug]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'New link made. The old one no longer works.']);
+
+        return back();
     }
 
     /**

@@ -12,7 +12,7 @@ async function createServer(
     page: Page,
     name: string,
     slug: string,
-    isPublic: boolean,
+    visibility: 'public' | 'private' | 'link',
 ): Promise<void> {
     await page.goto('/admin/servers');
     await page.locator('[data-test="new-server"]').click();
@@ -24,8 +24,10 @@ async function createServer(
 
     await page.getByLabel('Name').fill(name);
     await page.getByLabel('Slug').fill(slug);
-    if (isPublic) {
-        await page.getByLabel(/^Public/).check();
+    // Private is the default (#5462).
+    await expect(page.getByLabel('Visibility')).toHaveValue('private');
+    if (visibility !== 'private') {
+        await page.getByLabel('Visibility').selectOption(visibility);
     }
     await page.getByLabel('Software').selectOption('custom');
     await page.getByLabel('Java version').selectOption('17');
@@ -77,7 +79,7 @@ test('an admin adds a server, a player starts it and sees it come online', async
     await ensureWorldStorage(page);
     await page.getByRole('link', { name: 'Servers', exact: true }).click();
     await expect(page).toHaveURL(/\/admin\/servers$/);
-    await createServer(page, 'Friends Modpack', 'friends-modpack', false);
+    await createServer(page, 'Friends Modpack', 'friends-modpack', 'private');
 
     // A bad slug is refused with the reason.
     await page.locator('[data-test="new-server"]').click();
@@ -171,7 +173,7 @@ test('a guest starts a public server from the home page', async ({
 }) => {
     await logIn(page, 'admin@example.com');
     await ensureWorldStorage(page);
-    await createServer(page, 'Open World', 'open-world', true);
+    await createServer(page, 'Open World', 'open-world', 'public');
 
     const guestContext = await browser.newContext();
     const guest = await guestContext.newPage();
@@ -208,13 +210,96 @@ test('a guest starts a public server from the home page', async ({
     await stopServer(page, 'Open World', 'open-world');
 });
 
+test('a link-only server opens and starts only through its share link', async ({
+    page,
+    browser,
+}) => {
+    // #5462. Not "Name"/"Slug" in the server's name: other specs' label lookups. Its own
+    // admin: the other tests sign admin@example.com in within the same minute (Fortify: 5).
+    await logIn(page, 'share-admin@example.com');
+    await ensureWorldStorage(page);
+    await createServer(page, 'Community Realm', 'community-realm', 'link');
+    await expect(
+        page.locator('[data-test="server-row-community-realm"]'),
+    ).toContainText('Link only');
+
+    // The edit page shows the link and copies exactly that.
+    await page.getByRole('link', { name: 'Edit Community Realm' }).click();
+    await expect(page.getByLabel('Visibility')).toHaveValue('link');
+    const shareUrl = (
+        await page.locator('[data-test="share-url"]').textContent()
+    )?.trim();
+    expect(shareUrl).toMatch(/\/s\/[A-Za-z0-9]{40}$/);
+    await page.evaluate(() => {
+        const w = window as unknown as { copied: string[] };
+        w.copied = [];
+        navigator.clipboard.writeText = async (text: string) => {
+            w.copied.push(text);
+        };
+    });
+    const copy = page.getByRole('button', {
+        name: 'Copy the share link of Community Realm',
+    });
+    await copy.click();
+    await expect(copy).toContainText('Copied');
+    expect(
+        await page.evaluate(
+            () => (window as unknown as { copied: string[] }).copied,
+        ),
+    ).toEqual([shareUrl]);
+
+    // Not on the home page, nor on a player's dashboard.
+    const guestContext = await browser.newContext();
+    const guest = await guestContext.newPage();
+    await guest.goto('/');
+    await expect(
+        guest.locator('[data-test="server-community-realm"]'),
+    ).toHaveCount(0);
+    // (The slug start route's 404 for it is in SharedServerTest: a bare POST here is a 419.)
+
+    // A guest with the link sees that server alone and starts it, no account needed.
+    await guest.goto(shareUrl!);
+    await expect(
+        guest.getByRole('heading', { name: 'Community Realm' }),
+    ).toBeVisible();
+    const card = guest.locator('[data-test="server-community-realm"]');
+    await card.getByRole('button', { name: 'Start Community Realm' }).click();
+    await expect(
+        guest.getByText('Starting Community Realm. It takes a few minutes.'),
+    ).toBeVisible();
+    await expect(card.locator('[data-test="server-status"]')).toHaveText(
+        'Online',
+        { timeout: 20_000 },
+    );
+    await expect(card.locator('[data-test="server-address"]')).toBeVisible();
+    await expect(
+        card.getByRole('button', { name: 'Stop Community Realm' }),
+    ).toHaveCount(0);
+
+    // The admin stops it, then makes a new link: the old one stops working at once.
+    await stopServer(page, 'Community Realm', 'community-realm');
+    await page.getByRole('link', { name: 'Edit Community Realm' }).click();
+    await page.locator('[data-test="new-share-link"]').click();
+    await expect(
+        page.getByText('New link made. The old one no longer works.'),
+    ).toBeVisible();
+    const newUrl = (
+        await page.locator('[data-test="share-url"]').textContent()
+    )?.trim();
+    expect(newUrl).toMatch(/\/s\/[A-Za-z0-9]{40}$/);
+    expect(newUrl).not.toBe(shareUrl);
+    expect((await guest.request.get(shareUrl!)).status()).toBe(404);
+    expect((await guest.request.get(newUrl!)).status()).toBe(200);
+    await guestContext.close();
+});
+
 test('the player who started a server stops it from the dashboard', async ({
     page,
     browser,
 }) => {
     await logIn(page, 'admin@example.com');
     await ensureWorldStorage(page);
-    await createServer(page, 'Weekend Survival', 'weekend-survival', false);
+    await createServer(page, 'Weekend Survival', 'weekend-survival', 'private');
 
     // The idle setting is on the form, with the default.
     await page.goto('/admin/servers');

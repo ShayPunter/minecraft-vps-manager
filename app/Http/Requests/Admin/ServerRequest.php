@@ -4,6 +4,7 @@ namespace App\Http\Requests\Admin;
 
 use App\Cloud\CloudException;
 use App\Dns\Dns;
+use App\Enums\Visibility;
 use App\Minecraft\Installer;
 use App\Minecraft\InstallPlan;
 use App\Minecraft\Software;
@@ -31,7 +32,7 @@ class ServerRequest extends FormRequest
     {
         $this->merge([
             'slug' => is_string($this->input('slug')) ? strtolower(trim($this->input('slug'))) : $this->input('slug'),
-            'is_public' => $this->boolean('is_public'),
+            'visibility' => filled($this->input('visibility')) ? $this->input('visibility') : Visibility::Private->value,
             'eula' => $this->boolean('eula'),
             // Left out, it's a custom server, as every server was before #5351.
             'software' => filled($this->input('software')) ? $this->input('software') : Software::Custom->value,
@@ -77,7 +78,7 @@ class ServerRequest extends FormRequest
                 Rule::unique(Server::class, 'slug')->ignore($server instanceof Server ? $server->id : null),
             ],
             'description' => ['nullable', 'string', 'max:500'],
-            'is_public' => ['boolean'],
+            'visibility' => ['required', Rule::enum(Visibility::class)],
             // The Minecraft EULA (#5367): ticked, starts write eula.txt with eula=true.
             'eula' => ['boolean'],
             'icon_url' => ['nullable', 'string', 'max:2048', 'url:https'],

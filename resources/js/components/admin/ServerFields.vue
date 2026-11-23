@@ -9,6 +9,7 @@ import type {
     ServerTypeOption,
     SoftwareOptions,
     SoftwareValue,
+    Visibility,
 } from '@/types/servers';
 
 const props = defineProps<{
@@ -55,6 +56,31 @@ const savedInstallCommand = computed(() =>
 );
 
 const subdomain = ref(props.server?.subdomain ?? '');
+
+// Who sees it (#5462). Same wording as App\Enums\Visibility.
+const visibility = ref<Visibility>(props.server?.visibility ?? 'private');
+const visibilityOptions: {
+    value: Visibility;
+    label: string;
+    description: string;
+}[] = [
+    {
+        value: 'public',
+        label: 'Public',
+        description: 'Listed on the home page. Anyone can start it.',
+    },
+    {
+        value: 'private',
+        label: 'Private',
+        description: 'Signed-in players see it on their dashboard.',
+    },
+    {
+        value: 'link',
+        label: 'Link only',
+        description:
+            'Only people with its share link see it, and they need no account. The link is shown here once you save.',
+    },
+];
 
 // In the script, not a template attribute: vue-tsc 3.3.13 misreads "https://" there.
 const eulaUrl = 'https://aka.ms/MinecraftEULA';
@@ -150,18 +176,33 @@ const currentTypeRetired = computed(
         <InputError :message="errors.description" />
     </div>
 
-    <div class="flex items-center gap-2">
-        <input
-            id="is_public"
-            type="checkbox"
-            name="is_public"
-            value="1"
-            :checked="server?.is_public ?? false"
-            class="size-4"
-        />
-        <Label for="is_public"
-            >Public: listed on the home page, anyone can start it</Label
+    <div class="grid gap-2">
+        <Label for="visibility">Visibility</Label>
+        <select
+            id="visibility"
+            name="visibility"
+            :class="selectClass"
+            @change="
+                visibility = ($event.target as HTMLSelectElement)
+                    .value as Visibility
+            "
         >
+            <option
+                v-for="option in visibilityOptions"
+                :key="option.value"
+                :value="option.value"
+                :selected="option.value === visibility"
+            >
+                {{ option.label }}
+            </option>
+        </select>
+        <p class="text-sm text-muted-foreground" data-test="visibility-help">
+            {{
+                visibilityOptions.find((o) => o.value === visibility)
+                    ?.description
+            }}
+        </p>
+        <InputError :message="errors.visibility" />
     </div>
 
     <div class="grid gap-2">

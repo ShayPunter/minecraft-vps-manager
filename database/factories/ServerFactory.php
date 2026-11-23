@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\Visibility;
 use App\Models\Server;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
@@ -19,7 +20,7 @@ class ServerFactory extends Factory
             'name' => Str::title($name),
             'slug' => Str::slug($name),
             'description' => null,
-            'is_public' => false,
+            'visibility' => Visibility::Private,
             'icon_url' => null,
             'server_type' => 'cx33',
             'location' => 'fsn1',
@@ -31,6 +32,11 @@ class ServerFactory extends Factory
 
     public function public(): static
     {
-        return $this->state(fn () => ['is_public' => true]);
+        return $this->state(fn () => ['visibility' => Visibility::Public]);
+    }
+
+    public function linkOnly(): static
+    {
+        return $this->state(fn () => ['visibility' => Visibility::Link]);
     }
 }

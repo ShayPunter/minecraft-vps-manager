@@ -55,7 +55,7 @@ class ServerPresenter
             'slug' => $server->slug,
             'description' => $server->description,
             'icon_url' => $server->icon_url,
-            'is_public' => $server->is_public,
+            'visibility' => $server->visibility->value,
             'status' => $status->value,
             'status_label' => $status->label(),
             // The server's name once its record points at this VPS (#5338), else the IP.

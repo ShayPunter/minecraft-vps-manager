@@ -8,6 +8,9 @@ export type ServerStatus =
     | 'stopped'
     | 'failed';
 
+/** Who sees a server (#5462): App\Enums\Visibility. */
+export type Visibility = 'public' | 'private' | 'link';
+
 /** A server as App\Servers\ServerPresenter shows it. */
 export type ServerSummary = {
     id: number;
@@ -15,7 +18,7 @@ export type ServerSummary = {
     slug: string;
     description: string | null;
     icon_url: string | null;
-    is_public: boolean;
+    visibility: Visibility;
     status: ServerStatus;
     status_label: string;
     address: string | null;
@@ -68,7 +71,9 @@ export type ServerDefinition = {
     name: string;
     slug: string;
     description: string | null;
-    is_public: boolean;
+    visibility: Visibility;
+    /** A link-only server's share link (#5462), else null. */
+    share_url?: string | null;
     icon_url: string | null;
     server_type: string;
     location: string;

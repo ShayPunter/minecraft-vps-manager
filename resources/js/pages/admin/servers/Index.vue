@@ -84,7 +84,13 @@ usePoll(5000, { only: ['servers'] });
                             </p>
                         </td>
                         <td class="px-4 py-2">
-                            {{ server.is_public ? 'Public' : 'Private' }}
+                            {{
+                                server.visibility === 'public'
+                                    ? 'Public'
+                                    : server.visibility === 'link'
+                                      ? 'Link only'
+                                      : 'Private'
+                            }}
                         </td>
                         <td class="px-4 py-2">
                             <Badge

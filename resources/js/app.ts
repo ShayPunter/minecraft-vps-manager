@@ -11,7 +11,8 @@ void createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
     layout: (name) => {
         switch (true) {
-            case name === 'Welcome':
+            // No sidebar for guests: the share page (#5462) is laid out like Welcome.
+            case name === 'Welcome' || name === 'Shared':
                 return null;
             case name.startsWith('auth/'):
                 return AuthLayout;

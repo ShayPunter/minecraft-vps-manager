@@ -499,7 +499,7 @@ class WatchdogTest extends TestCase
 
     public function test_guests_cant_stop_and_a_guest_started_run_is_stopped_by_admins_only(): void
     {
-        $this->online(['is_public' => true]);
+        $this->online(['visibility' => 'public']);
 
         $this->post('/servers/vanilla/stop')->assertRedirect('/login');
         $this->get('/')->assertInertia(fn (AssertableInertia $page) => $page

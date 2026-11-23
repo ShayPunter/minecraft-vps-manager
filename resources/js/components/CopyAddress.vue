@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 const props = defineProps<{
     address: string;
     serverName: string;
+    /** Defaults to "Copy the address of <name>". */
+    label?: string;
 }>();
 
 const state = ref<'idle' | 'copied' | 'failed'>('idle');
@@ -38,7 +40,7 @@ onBeforeUnmount(() => clearTimeout(timer));
         variant="ghost"
         size="sm"
         class="h-7 gap-1 px-2 align-middle"
-        :aria-label="`Copy the address of ${serverName}`"
+        :aria-label="label ?? `Copy the address of ${serverName}`"
         data-test="copy-address"
         @click="copy"
     >

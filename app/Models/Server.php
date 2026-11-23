@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\RunStatus;
+use App\Enums\Visibility;
 use App\Minecraft\Software;
 use Carbon\CarbonImmutable;
 use Database\Factories\ServerFactory;
@@ -12,6 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Str;
 
 /**
  * A Minecraft server's definition. Its VPS exists only while a run is active.
@@ -20,7 +22,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $name
  * @property string $slug lowercase letters, digits and dashes (names the VPS and the systemd unit)
  * @property string|null $description
- * @property bool $is_public listed on the home page; guests may start it
+ * @property Visibility $visibility public (home page, guests start it), private (signed in) or link only (#5462)
+ * @property string|null $share_token a link-only server's share token (encrypted; Admin shows the link)
+ * @property string|null $share_token_hash its SHA-256, for the lookup
  * @property string|null $icon_url
  * @property string $server_type
  * @property string $location
@@ -45,14 +49,17 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property-read ServerRun|null $latestRun
  * @property-read WorldArchive|null $currentWorldArchive
  */
-#[Fillable(['name', 'slug', 'description', 'is_public', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'software', 'minecraft_version', 'properties', 'whitelist', 'ops', 'run_sh', 'user_jvm_args'])]
+#[Fillable(['name', 'slug', 'description', 'visibility', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'software', 'minecraft_version', 'properties', 'whitelist', 'ops', 'run_sh', 'user_jvm_args'])]
 class Server extends Model
 {
     /** @use HasFactory<ServerFactory> */
     use HasFactory;
 
     /** @var array<string, mixed> */
-    protected $attributes = ['software' => 'custom'];
+    protected $attributes = ['software' => 'custom', 'visibility' => 'private'];
+
+    /** @var list<string> */
+    protected $hidden = ['share_token', 'share_token_hash'];
 
     public const SLUG_PATTERN = '/^[a-z0-9]+(?:-[a-z0-9]+)*$/';
 
@@ -112,6 +119,61 @@ class Server extends Model
         return $this->activeRun !== null ? $this->activeRun->status : RunStatus::Stopped;
     }
 
+    /**
+     * A link-only server always has a share token, and no other server has one: switching
+     * away from Link only kills the link, and switching back makes a new one (#5462).
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Server $server): void {
+            if ($server->visibility !== Visibility::Link) {
+                $server->share_token = null;
+                $server->share_token_hash = null;
+            } elseif ($server->share_token_hash === null) {
+                $server->fillShareToken();
+            }
+        });
+    }
+
+    /**
+     * A new share link; the old one stops working at once. Saves.
+     */
+    public function regenerateShareToken(): void
+    {
+        $this->fillShareToken();
+        $this->save();
+    }
+
+    private function fillShareToken(): void
+    {
+        $token = Str::random(40);
+        $this->share_token = $token;
+        $this->share_token_hash = self::hashShareToken($token);
+    }
+
+    public static function hashShareToken(string $token): string
+    {
+        return hash('sha256', $token);
+    }
+
+    /**
+     * The link-only server this share token opens, if any.
+     */
+    public static function findByShareToken(string $token): ?self
+    {
+        return self::query()
+            ->where('visibility', Visibility::Link)
+            ->where('share_token_hash', self::hashShareToken($token))
+            ->first();
+    }
+
+    public function shareUrl(): ?string
+    {
+        return $this->visibility === Visibility::Link && $this->share_token !== null
+            ? route('share.show', $this->share_token)
+            : null;
+    }
+
     public function getRouteKeyName(): string
     {
         return 'slug';
@@ -123,7 +185,8 @@ class Server extends Model
     protected function casts(): array
     {
         return [
-            'is_public' => 'boolean',
+            'visibility' => Visibility::class,
+            'share_token' => 'encrypted',
             'software' => Software::class,
             'properties' => 'array',
             'whitelist' => 'array',
