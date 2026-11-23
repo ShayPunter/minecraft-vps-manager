@@ -15,7 +15,9 @@ one before the VPS is deleted. Servers can't start until world storage is set up
 - Sign-up is off. An admin creates every account (Admin → Users).
 - Two roles: **admin** (manages users and servers) and **player**.
 - Public servers can be started from the home page by anyone; private ones need an account.
-  At most `MVM_MAX_RUNNING` (2) run at once.
+  At most `MVM_MAX_RUNNING` (2) run at once. Guests (not signed in) can start each server
+  `MVM_GUEST_STARTS_PER_DAY` (3) times a day, and only while `MVM_GUEST_FREE_SLOTS` (1) of
+  those slots stay free for signed-in players; signed-in players aren't limited.
 
 ## Hosting on Forge
 
@@ -30,17 +32,19 @@ one before the VPS is deleted. Servers can't start until world storage is set up
    The private half is stored encrypted with `APP_KEY`, so keep `APP_KEY` as it is.
 3. **Environment** (Forge → site → Environment):
 
-    | Key                         | Meaning                                                              |
-    | --------------------------- | -------------------------------------------------------------------- |
-    | `APP_URL`                   | `https://` + the domain                                              |
-    | `HETZNER_TOKEN`             | the token from step 2                                                |
-    | `QUEUE_CONNECTION`          | `database` (starts and stops run on the queue)                       |
-    | `MAIL_*`                    | a real mailer, so alerts arrive (with `log` they only reach the log) |
-    | `MVM_ALERT_MAIL`            | where alerts go; empty = every admin                                 |
-    | `MVM_ALERT_DISCORD_WEBHOOK` | optional: alerts in a Discord channel too                            |
-    | `MVM_MAX_RUNNING`           | VPSes at once, across all servers (default 2)                        |
-    | `MVM_MAX_RUN_HOURS`         | alert once when a run is older than this (default 8)                 |
-    | `MVM_BOOT_TIMEOUT_MINUTES`  | give up on a start that isn't online by then (default 20)            |
+    | Key                         | Meaning                                                               |
+    | --------------------------- | --------------------------------------------------------------------- |
+    | `APP_URL`                   | `https://` + the domain                                               |
+    | `HETZNER_TOKEN`             | the token from step 2                                                 |
+    | `QUEUE_CONNECTION`          | `database` (starts and stops run on the queue)                        |
+    | `MAIL_*`                    | a real mailer, so alerts arrive (with `log` they only reach the log)  |
+    | `MVM_ALERT_MAIL`            | where alerts go; empty = every admin                                  |
+    | `MVM_ALERT_DISCORD_WEBHOOK` | optional: alerts in a Discord channel too                             |
+    | `MVM_MAX_RUNNING`           | VPSes at once, across all servers (default 2)                         |
+    | `MVM_GUEST_STARTS_PER_DAY`  | guest starts per server per day, UTC (default 3; 0 = sign-in only)    |
+    | `MVM_GUEST_FREE_SLOTS`      | slots a guest start must leave free for signed-in players (default 1) |
+    | `MVM_MAX_RUN_HOURS`         | alert once when a run is older than this (default 8)                  |
+    | `MVM_BOOT_TIMEOUT_MINUTES`  | give up on a start that isn't online by then (default 20)             |
 
 4. **Queue worker** (Forge → site → Queue): connection `database`, timeout `2800`, and
    **2 processes**. A stop zips the world and uploads it from the VPS (up to 45 minutes for

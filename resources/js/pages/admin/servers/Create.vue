@@ -7,6 +7,7 @@ import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
 import { create, index } from '@/routes/admin/servers';
 import type {
+    GuestStartLimits,
     ServerCatalog,
     ServerConfig,
     SoftwareOptions,
@@ -17,6 +18,7 @@ defineProps<{
     javaVersions: number[];
     software: SoftwareOptions;
     config: ServerConfig;
+    guestStarts: GuestStartLimits;
     dnsDomain: string | null;
 }>();
 
@@ -50,6 +52,7 @@ defineOptions({
                 :java-versions="javaVersions"
                 :software="software"
                 :dns-domain="dnsDomain"
+                :guest-starts="guestStarts"
             />
             <ServerConfigFields :errors="errors" :config="config" />
 

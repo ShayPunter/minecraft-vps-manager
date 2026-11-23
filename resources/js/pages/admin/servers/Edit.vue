@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { index } from '@/routes/admin/servers';
 import { edit as worldStorage } from '@/routes/admin/world-storage';
 import type {
+    GuestStartLimits,
     ServerCatalog,
     ServerConfig,
     ServerDefinition,
@@ -24,6 +25,7 @@ const props = defineProps<{
     javaVersions: number[];
     software: SoftwareOptions;
     config: ServerConfig;
+    guestStarts: GuestStartLimits;
     dnsDomain: string | null;
     world: {
         archives: {
@@ -101,6 +103,7 @@ defineOptions({
                 :dns-domain="dnsDomain"
                 :server="props.server"
                 :has-saved-world="world.archives.some((a) => a.current)"
+                :guest-starts="guestStarts"
             />
             <ServerConfigFields
                 :errors="errors"

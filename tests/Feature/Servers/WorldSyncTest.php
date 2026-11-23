@@ -92,7 +92,7 @@ class WorldSyncTest extends TestCase
 
     private function startAndBoot(): ServerRun
     {
-        $run = $this->launcher()->start($this->server(), null, null)->refresh();
+        $run = $this->launcher()->start($this->server(), User::factory()->create(), null)->refresh();
         $this->cloud()->setStatus((int) $run->provider_server_id, 'running');
         $this->artisan('servers:watch')->assertSuccessful();
 

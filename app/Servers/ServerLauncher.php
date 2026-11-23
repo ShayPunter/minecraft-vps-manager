@@ -83,8 +83,15 @@ class ServerLauncher
 
                 $cap = (int) config('minecraft.max_running');
 
-                if (ServerRun::query()->active()->count() >= $cap) {
+                $active = ServerRun::query()->active()->count();
+
+                if ($active >= $cap) {
                     throw StartRefused::capReached($cap);
+                }
+
+                // Guests (public card, share link) have their own budget and leave a slot free (#5526).
+                if ($user === null) {
+                    GuestStarts::check($server, $active, $cap);
                 }
 
                 $run = new ServerRun;

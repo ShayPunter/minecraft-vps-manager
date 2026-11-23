@@ -5,6 +5,12 @@ return [
     // `?:`, not env()'s default: an empty `MVM_MAX_RUNNING=` line would skip it.
     'max_running' => (int) (env('MVM_MAX_RUNNING') ?: 2),
 
+    // Starts by guests (not signed in: a public server's card, a share link) (#5526): each
+    // server may be started this often a day (UTC) by guests (0 = guests can't start), and
+    // a guest start must leave this many of the max_running slots free for signed-in players.
+    'guest_starts_per_day' => is_numeric(env('MVM_GUEST_STARTS_PER_DAY')) ? (int) env('MVM_GUEST_STARTS_PER_DAY') : 3,
+    'guest_free_slots' => is_numeric(env('MVM_GUEST_FREE_SLOTS')) ? (int) env('MVM_GUEST_FREE_SLOTS') : 1,
+
     // How often (seconds) a page view may ask the provider how a starting VPS is doing.
     // The scheduler's servers:advance runs every minute whether anyone is looking or not.
     'check_interval' => is_numeric(env('MVM_CHECK_INTERVAL')) ? (int) env('MVM_CHECK_INTERVAL') : 10,

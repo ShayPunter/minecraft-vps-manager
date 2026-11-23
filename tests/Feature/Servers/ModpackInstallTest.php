@@ -80,7 +80,7 @@ class ModpackInstallTest extends TestCase
 
     private function startAndBoot(Server $server): ServerRun
     {
-        $run = $this->app->make(ServerLauncher::class)->start($server, null, null)->refresh();
+        $run = $this->app->make(ServerLauncher::class)->start($server, User::factory()->create(), null)->refresh();
         $cloud = $this->app->make(CloudProvider::class);
         $this->assertInstanceOf(FakeCloudProvider::class, $cloud);
         $cloud->setStatus((int) $run->provider_server_id, 'running');
@@ -290,8 +290,8 @@ class ModpackInstallTest extends TestCase
         $pack = Server::factory()->create(['slug' => 'atm10', 'software' => Software::PackUrl, 'pack_url' => self::ATM10, 'heap_mb' => 6400]);
         $custom = Server::factory()->create(['slug' => 'plain']);
         $this->shell()->failMatching('prepare.sh', 75, 'still installing'); // busy: never set up
-        $packRun = $this->app->make(ServerLauncher::class)->start($pack, null, null)->refresh();
-        $customRun = $this->app->make(ServerLauncher::class)->start($custom, null, null)->refresh();
+        $packRun = $this->app->make(ServerLauncher::class)->start($pack, User::factory()->create(), null)->refresh();
+        $customRun = $this->app->make(ServerLauncher::class)->start($custom, User::factory()->create(), null)->refresh();
 
         $this->travel(30)->minutes();
         $this->artisan('servers:watch')->assertSuccessful();

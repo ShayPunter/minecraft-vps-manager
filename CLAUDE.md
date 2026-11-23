@@ -78,6 +78,11 @@ output. Run with the real binary:
   Don't use `escapeshellarg()` there: on Windows it double-quotes, and the script runs on Linux.
 - Start is `POST /servers/{slug}/start` (`throttle:server-start`, 5/min per user or IP).
   Public servers can be started by guests (#5276); private ones 404 for guests.
+  Guest starts (no user: the public card or a share link) are limited in
+  `App\Servers\GuestStarts` (#5526), checked inside `start()`'s lock after the cap:
+  `minecraft.guest_starts_per_day` per server per UTC day (runs with `started_by` null,
+  failed ones included; 0 = sign-in only) and `guest_free_slots` of `max_running` left free.
+  `GuestStarts::props()` feeds the admin form's `data-test="guest-starts"` line.
 - Visibility (#5462, `App\Enums\Visibility`, `servers.visibility`, replaced `is_public`):
   public (home page, guests start it), private (every signed-in dashboard), link (only
   admins' dashboard and Admin, plus its share page). A link-only server always has a share

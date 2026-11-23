@@ -11,6 +11,7 @@ use App\Cloud\ServerSpec;
 use App\Enums\RunStatus;
 use App\Models\Server;
 use App\Models\ServerRun;
+use App\Models\User;
 use App\Servers\FakeRemoteShell;
 use App\Servers\RemoteShell;
 use App\Servers\ServerLauncher;
@@ -68,7 +69,7 @@ class SshKeyLifecycleTest extends TestCase
     {
         $server = Server::factory()->create(['name' => ucfirst($slug), 'slug' => $slug]);
 
-        return $this->launcher()->start($server, null, null)->refresh();
+        return $this->launcher()->start($server, User::factory()->create(), null)->refresh();
     }
 
     private function online(string $slug = 'vanilla'): ServerRun

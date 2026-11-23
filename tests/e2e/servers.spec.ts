@@ -206,6 +206,13 @@ test('a guest starts a public server from the home page', async ({
         ),
     ).toHaveText(/Stops in 1[45] min if nobody joins\.$/);
 
+    // Its edit page counts that start against the guests' daily budget (#5526).
+    await page.getByRole('link', { name: 'Edit Open World' }).click();
+    await expect(page.locator('[data-test="guest-starts"]')).toHaveText(
+        /^Guests who aren't signed in can start it \d+ times a day \(1 today\), and only while 1 of the \d+ server slots stay free for signed-in players\./,
+    );
+    await page.goto('/admin/servers');
+
     // Stop it again so later specs start under the cap.
     await stopServer(page, 'Open World', 'open-world');
 });
