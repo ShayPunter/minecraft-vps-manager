@@ -24,10 +24,25 @@ class ProfileUpdateRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
+     * Card 5532: a new email address needs the current password, so a
+     * stolen session can't move the account to another inbox and then
+     * reset the password there.
+     *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
-        return $this->profileRules($this->user()->id);
+        $rules = $this->profileRules($this->user()->id);
+
+        if ($this->changesEmail()) {
+            $rules['current_password'] = ['required', 'string', 'current_password'];
+        }
+
+        return $rules;
+    }
+
+    public function changesEmail(): bool
+    {
+        return $this->input('email') !== $this->user()->email;
     }
 }
