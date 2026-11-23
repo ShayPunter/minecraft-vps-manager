@@ -143,6 +143,38 @@ class WorldSyncScriptTest extends TestCase
         $this->assertStringContainsString('flock -n 9', $script);
     }
 
+    public function test_a_saved_world_is_checked_like_an_upload_and_links_are_gone_before_root_writes(): void
+    {
+        foreach ([$this->sftp(), $this->s3()] as $storage) {
+            $script = WorldSync::prepareFiles($this->server(), $this->archive(), $storage, $storage->driver === 's3' ? 'https://s3.test/b/k?X-Amz-Signature=e' : null)['/root/.mvm/prepare.sh'][0];
+
+            // #5527: no symlinks or paths outside the folder in a saved world either.
+            $this->assertStringContainsString('check_zip() {', $script);
+            $check = strpos($script, 'check_zip "$M/work/world.zip" "The saved world"');
+            $this->assertNotFalse($check);
+            $this->assertLessThan(strpos($script, 'unzip -q "$M/work/world.zip"'), $check);
+            $this->assertLessThan($check, strpos($script, 'check_zip() {'));
+
+            // Links are removed after the world is in place and before the app's files land.
+            $unlink = strpos($script, 'find "$DIR" -type l');
+            $this->assertNotFalse($unlink);
+            $this->assertLessThan($unlink, strpos($script, 'cp -a "$src/." "$DIR/"'));
+            $this->assertLessThan(strpos($script, 'Applied server.properties'), $unlink);
+        }
+    }
+
+    public function test_saves_leave_symbolic_links_out(): void
+    {
+        foreach ([WorldSync::saveFiles($this->server(), $this->sftp()), WorldSync::saveFiles($this->server(), $this->s3(), $this->upload())] as $files) {
+            $script = $files['/root/.mvm/save.sh'][0];
+            $unlink = strpos($script, 'find "$DIR" -type l');
+
+            $this->assertNotFalse($unlink);
+            $this->assertStringContainsString('Not saving the symbolic link', $script);
+            $this->assertLessThan(strpos($script, 'zip -q -r -y "$M/work/save.zip" .'), $unlink);
+        }
+    }
+
     public function test_prepare_without_a_world_needs_no_login(): void
     {
         $files = WorldSync::prepareFiles($this->server(), null, null);

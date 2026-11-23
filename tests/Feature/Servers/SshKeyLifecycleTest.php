@@ -128,6 +128,33 @@ class SshKeyLifecycleTest extends TestCase
         $this->assertNotSame($run->ssh_private_key, $other->ssh_private_key);
     }
 
+    public function test_the_vps_gets_a_host_key_made_for_it_and_every_login_is_pinned_to_it(): void
+    {
+        $run = $this->start();
+        $userData = (string) ($this->cloud()->rawServer((int) $run->provider_server_id)['user_data'] ?? '');
+        $config = json_decode(substr($userData, strlen("#cloud-config\n")), true, flags: JSON_THROW_ON_ERROR);
+
+        // cloud-init installs only this key: the old ones go, no other types are made (#5527).
+        $this->assertTrue($config['ssh_deletekeys']);
+        $this->assertSame([], $config['ssh_genkeytypes']);
+        $this->assertMatchesRegularExpression('/^ssh-ed25519 [A-Za-z0-9+\/=]+$/', (string) $run->ssh_host_key);
+        $this->assertSame($run->ssh_host_key, implode(' ', array_slice(explode(' ', $config['ssh_keys']['ed25519_public']), 0, 2)));
+        $private = PublicKeyLoader::load($config['ssh_keys']['ed25519_private']);
+        $this->assertInstanceOf(PrivateKey::class, $private);
+        $this->assertSame(explode(' ', (string) $run->ssh_host_key)[1], explode(' ', trim($private->getPublicKey()->toString('OpenSSH')))[1]);
+        $this->assertNotSame($config['ssh_keys']['ed25519_private'], $run->ssh_private_key, 'Not the login key.');
+
+        // Only the public half is kept on the run.
+        $this->assertStringNotContainsString('PRIVATE KEY', (string) $run->getRawOriginal('ssh_host_key'));
+
+        // Every command, the start's prepare.sh and the stop's included, checks it.
+        $this->cloud()->setStatus((int) $run->provider_server_id, 'running');
+        $this->artisan('servers:watch')->assertSuccessful();
+        $this->launcher()->requestStop($run->refresh(), 'admin');
+        $this->assertNotEmpty($this->shell()->hostKeys());
+        $this->assertSame(array_fill(0, count($this->shell()->hostKeys()), $run->ssh_host_key), $this->shell()->hostKeys());
+    }
+
     public function test_the_private_key_is_encrypted_at_rest_and_never_serialised(): void
     {
         $run = $this->start();

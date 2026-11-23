@@ -18,7 +18,12 @@ class CloudInit
 {
     public const BASE_DIR = '/opt/minecraft';
 
-    public static function for(Server $server): string
+    /**
+     * @param  SshKeyPair|null  $hostKey  the VPS's SSH host key, made by the app for this run
+     *                                    (#5527) so the first login can check it; sshd gets
+     *                                    only this one (no other types generated)
+     */
+    public static function for(Server $server, ?SshKeyPair $hostKey = null): string
     {
         if (preg_match(Server::SLUG_PATTERN, $server->slug) !== 1) {
             throw new InvalidArgumentException("Refusing to build cloud-init for slug [{$server->slug}].");
@@ -61,6 +66,15 @@ class CloudInit
                 ['systemctl', 'daemon-reload'],
             ],
         ];
+
+        if ($hostKey !== null) {
+            $config['ssh_deletekeys'] = true;
+            $config['ssh_genkeytypes'] = [];
+            $config['ssh_keys'] = [
+                'ed25519_private' => $hostKey->privateKey,
+                'ed25519_public' => $hostKey->publicKey,
+            ];
+        }
 
         return "#cloud-config\n".json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
     }

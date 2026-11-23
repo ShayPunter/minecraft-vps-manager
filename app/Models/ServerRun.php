@@ -30,6 +30,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable|null $long_run_alerted_at
  * @property string|null $ssh_private_key this run's OpenSSH private key, encrypted with APP_KEY; wiped once the VPS is gone (#5324)
  * @property int|null $provider_ssh_key_id its public half at the provider
+ * @property string|null $ssh_host_key the VPS's own host key (`ssh-ed25519 AAAA…`), pinned on every login (#5527); null for older runs
  * @property CarbonImmutable|null $prepare_queued_at PrepareServerRun was queued (#5288); null again to retry
  * @property CarbonImmutable|null $prepared_at the world is in place and Minecraft was started
  * @property int|null $world_archive_id the archive this run started from (null: a new world)

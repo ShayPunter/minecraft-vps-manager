@@ -141,12 +141,24 @@ a real paste would use the machine's clipboard.
   where alerts go. `App\Support\Heartbeat` keeps the
   beats in the cache as ISO strings; `servers:sweep` also queues a `QueueHeartbeat`. FAIL =
   exit 1, WARN doesn't fail. Never prints a secret (tested). The Forge setup steps are in the README.
+- Run errors (`server_runs.error`: script output, SSH/provider messages, storage user@host,
+  IPs) go to admins only (#5527): `ServerPresenter::errorFor()` gives everyone else
+  `PUBLIC_ERROR` on the cards and in the start/stop toasts; the label still shows.
 - Who can stop: admins (Admin → Servers, or the dashboard), and the signed-in user who
   started the run (`POST /servers/{slug}/stop`, 404 for anyone else; `ServerPresenter::mayStop`).
   Guest-started public servers stop by the watchdog or an admin.
-- SSH: `RemoteShell` interface, `SshRemoteShell` (phpseclib 3, root; no host-key check,
-  every VPS is new and Hetzner doesn't report its key), `FakeRemoteShell` in testing/e2e
-  (records commands and the key each used in the cache; `failWith()`, `unreachable()`).
+- SSH: `RemoteShell` interface, `SshRemoteShell` (phpseclib 3, root), `FakeRemoteShell` in
+  testing/e2e (records commands, the key each used and the host key it was pinned to in the
+  cache; `failWith()`, `unreachable()`). Host keys are pinned (#5527): `provision()` makes a
+  second ed25519 pair per run, cloud-init gets it (`ssh_keys`, `ssh_deletekeys`,
+  `ssh_genkeytypes: []`), only `server_runs.ssh_host_key` (`ssh-ed25519 AAAA…`, public) is
+  kept, and every `run()`/`putFiles()` offers only that type and refuses ("didn't show the
+  SSH host key made for this VPS") before logging in. A prepare that hits it retries like a
+  refused connection until the boot timeout. Runs from before #5527 (null) aren't checked.
+  Checked for real (Nov 23): `ubuntu:24.04` + cloud-init (NoCloud seed with the app's real
+  user data) + sshd ended with only the app's key; SshRemoteShell from `php:8.4-cli` ran and
+  wrote files pinned to it and refused a different one. `SshHostKeyIntegrationTest` runs
+  against CI's atmoz/sftp service.
   Checked against a real sshd in Docker: exit codes, output, timeout, wrong key, public key
   given as private, and a key from `SshKeyPair::generate()` (#5324).
 - SSH keys (#5324): **every run makes its own pair** (`App\Servers\SshKeyPair`, phpseclib,
@@ -204,13 +216,16 @@ a real paste would use the machine's clipboard.
   created empty with their mode before the contents) and runs as root. **prepare.sh**
   (`PrepareServerRun`, queued once by `advance()` when the VPS is running, guarded by
   `server_runs.prepare_queued_at`): `cloud-init status --wait`, download the current archive,
-  check size + SHA-256 against the `WorldArchive` row, unzip (a zip holding one folder is
-  unpacked from inside it), `systemctl start`. Cloud-init no longer enables or starts the
+  check size + SHA-256 against the `WorldArchive` row, `check_zip` (the upload rules, #5527),
+  unzip (a zip holding one folder is unpacked from inside it), remove any symlink in the
+  folder (`WorldSync::unlinkScript()`, before root writes eula.txt / server.properties /
+  user_jvm_args.txt; `applyScript()` also `rm -f`s each file before writing), `systemctl start`. Cloud-init no longer enables or starts the
   unit. Minecraft is probed only once `prepared_at` is set. Can't connect (sshd not up) or
   exit 75 (another script holds the `flock`) → `prepare_queued_at` cleared, tried on the
   next check; any other failure → `abandon()` (VPS deleted, run failed). **save.sh** (in
   `stop()`, after the clean `systemctl stop`, for runs with `prepared_at` or `online_at`):
-  refuses while the unit is active, zips the folder (`-y`, symlinks stored as links),
+  refuses while the unit is active, removes symbolic links (each named in the output, #5527)
+  and zips the folder (`-y`, so zip never follows one),
   uploads `<path>.part`, downloads it again and compares the SHA-256, renames, prints
   `size=… sha256=…` (or `empty=1` for an empty folder: nothing saved, the stop goes on).
   The app then checks the size on storage with Flysystem and `Archives::record()`s it
@@ -281,7 +296,8 @@ a real paste would use the machine's clipboard.
   410/403/404, i.e. only when it next has lines to send after the run ended (runs end once the
   VPS is deleted anyway). Intake: `POST /runs/{run}/log` (`RunLogIntakeController`, outside
   the web middleware like /version: no session, no CSRF, no cookie; `throttle:run-log` 60/min per
-  run; 404 for an unknown run or a wrong token alike, 410 once ended, 413 over 512 KB). A fresh
+  run **and IP** plus 300/min per IP (#5527: it counts before the token check, so a run-only
+  key let anyone 429 the real shipper); 404 for an unknown run or a wrong token alike, 410 once ended, 413 over 512 KB). A fresh
   token per prepare attempt, only its SHA-256 on the run (`log_token_hash`, `$hidden`). Lines:
   CR stripped, empty skipped, cut to 2,000 chars, newest 5,000 per run kept, all pruned after
   14 days (`servers:prune-logs`, daily): Minecraft logs player names and IPs, admins only.

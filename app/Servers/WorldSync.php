@@ -149,6 +149,61 @@ class WorldSync
     }
 
     /**
+     * check_zip <zip> <what>: the same rules as a world upload (ZipInspector), for server
+     * packs, .mrpacks and, since #5527, saved worlds: nothing outside the folder, no symlinks.
+     */
+    private static function checkZipFunction(): string
+    {
+        return <<<'SH'
+            check_zip() {
+                if ! unzip -tqq "$1" >/dev/null 2>&1; then echo "$2 isn't a readable zip file."; exit 27; fi
+                bad=$(zipinfo -1 "$1" | grep -E '^/|^[A-Za-z]:|\\|(^|/)\.\.(/|$)' | head -n 1 || true)
+                if [ -n "$bad" ]; then echo "$2 has an entry that would unpack outside the server folder: not unpacking it."; exit 27; fi
+                if zipinfo "$1" | grep -q '^l'; then echo "$2 holds a symbolic link, which isn't allowed: not unpacking it."; exit 27; fi
+            }
+
+            SH;
+    }
+
+    /**
+     * prepare.sh, once the world or install is in place (#5527): root writes eula.txt,
+     * server.properties, user_jvm_args.txt and the rest next, so no symbolic link may be left
+     * in the folder for it to write through (a mod or installer could make one). Each one
+     * removed is named in the log.
+     */
+    public static function unlinkScript(): string
+    {
+        return <<<'SH'
+            # No symbolic links in the server folder: root writes files there next (#5527).
+            find "$DIR" -type l > "$M/work/links"
+            while IFS= read -r link; do
+                echo "Removed the symbolic link ${link#"$DIR"/}: links aren't allowed in the server folder."
+                rm -f "$link"
+            done < "$M/work/links"
+            rm -f "$M/work/links"
+
+            SH;
+    }
+
+    /**
+     * save.sh's zip step: symbolic links are left out of the save (#5527), each named in the
+     * output, since a restore refuses them. `-y` stays so zip never follows one.
+     */
+    private static function zipStep(): string
+    {
+        return <<<'SH'
+            find "$DIR" -type l > "$M/work/links"
+            while IFS= read -r link; do
+                echo "Not saving the symbolic link ${link#"$DIR"/}."
+                rm -f "$link"
+            done < "$M/work/links"
+            rm -f "$M/work/links"
+            (cd "$DIR" && zip -q -r -y "$M/work/save.zip" .)
+
+            SH;
+    }
+
+    /**
      * A fresh install (#5351): download each file, check it against the hash its source
      * published, and for Fabric run the installer in the server folder (it fetches the
      * loader's libraries from Fabric's Maven and writes fabric-server-launch.jar). The URLs,
@@ -215,13 +270,6 @@ class WorldSync
                     rm -f "$2"
                     exit 24
                 fi
-            }
-            # The same rules as a world upload: nothing outside the folder, no symlinks.
-            check_zip() {
-                if ! unzip -tqq "$1" >/dev/null 2>&1; then echo "$2 isn't a readable zip file."; exit 27; fi
-                bad=$(zipinfo -1 "$1" | grep -E '^/|^[A-Za-z]:|\\|(^|/)\.\.(/|$)' | head -n 1 || true)
-                if [ -n "$bad" ]; then echo "$2 has an entry that would unpack outside the server folder: not unpacking it."; exit 27; fi
-                if zipinfo "$1" | grep -q '^l'; then echo "$2 holds a symbolic link, which isn't allowed: not unpacking it."; exit 27; fi
             }
 
             SH;
@@ -356,6 +404,7 @@ class WorldSync
                     fi
                 fi
                 grep -v -E '^-Xm[sx][0-9]' "$J" > "$M/work/jvm" || true
+                rm -f "$J"
                 cat "$M/work/jvm" > "$J"
                 rm -f "$M/work/jvm"
             fi
@@ -395,6 +444,8 @@ class WorldSync
                 .'sum=$(sha256sum "$M/work/world.zip" | cut -d " " -f 1)'."\n"
                 ."if [ \"\$sum\" != '{$sha}' ]; then echo \"The downloaded world doesn't match the saved one (SHA-256 differs).\"; exit 22; fi\n"
                 .<<<'SH'
+                # A saved world gets the upload rules too (#5527): saves from before then kept links.
+                check_zip "$M/work/world.zip" "The saved world"
                 mkdir "$M/work/unpack"
                 unzip -q "$M/work/world.zip" -d "$M/work/unpack"
                 src="$M/work/unpack"
@@ -421,7 +472,7 @@ class WorldSync
                 systemctl daemon-reload
                 systemctl restart mvm-log-ship.service || echo "The log shipper didn't start."
             fi
-            for tool in java unzip; do
+            for tool in java unzip zipinfo; do
                 if ! command -v "$tool" >/dev/null 2>&1; then
                     echo "$tool isn't installed: the VPS's first-boot setup (cloud-init) didn't finish."
                     exit 20
@@ -431,7 +482,9 @@ class WorldSync
             mkdir -p "$M/work" "$DIR"
 
             SH
+            .self::checkZipFunction()
             .$fetch
+            .self::unlinkScript()
             .($server->software->isPack() && $server->heap_mb !== null ? self::heapScript($server->heap_mb) : '')
             .ServerFiles::applyScript()
             .<<<'SH'
@@ -441,7 +494,7 @@ class WorldSync
             SH
             .($server->eula_accepted_at !== null
                 // An admin accepted the Minecraft EULA for this server (#5367): Minecraft won't start without it.
-                ? "printf '%s\\n' '#Accepted for this server in Minecraft VPS Manager (https://aka.ms/MinecraftEULA)' 'eula=true' > \"\$DIR/eula.txt\"\n"
+                ? "rm -f \"\$DIR/eula.txt\"\nprintf '%s\\n' '#Accepted for this server in Minecraft VPS Manager (https://aka.ms/MinecraftEULA)' 'eula=true' > \"\$DIR/eula.txt\"\n"
                 : '')
             .<<<'SH'
             # Zips can store entries with no permissions at all (a real .mrpack's overrides came out
@@ -467,7 +520,10 @@ class WorldSync
             if [ ! -d "$DIR" ] || [ -z "$(ls -A "$DIR")" ]; then echo "empty=1"; exit 0; fi
             rm -rf "$M/work"
             mkdir -p "$M/work"
-            (cd "$DIR" && zip -q -r -y "$M/work/save.zip" .)
+
+            SH
+            .self::zipStep()
+            .<<<'SH'
             size=$(stat -c %s "$M/work/save.zip")
             sum=$(sha256sum "$M/work/save.zip" | cut -d " " -f 1)
             send "$M/work/save.zip" "$P.part"
@@ -656,7 +712,10 @@ class WorldSync
             if [ ! -d "$DIR" ] || [ -z "$(ls -A "$DIR")" ]; then echo "empty=1"; exit 0; fi
             rm -rf "$M/work"
             mkdir -p "$M/work"
-            (cd "$DIR" && zip -q -r -y "$M/work/save.zip" .)
+
+            SH
+            .self::zipStep()
+            .<<<'SH'
             size=$(stat -c %s "$M/work/save.zip")
             sum=$(sha256sum "$M/work/save.zip" | cut -d " " -f 1)
 

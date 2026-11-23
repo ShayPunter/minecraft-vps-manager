@@ -18,6 +18,9 @@ class ServerPresenter
     /** A run in one of these can be stopped by hand (provisioning can't: no VPS yet). */
     private const STOPPABLE = [RunStatus::Booting, RunStatus::Starting, RunStatus::Online, RunStatus::StopFailed];
 
+    /** What non-admins see instead of a run's error (#5527). */
+    public const PUBLIC_ERROR = 'Something went wrong. An admin has the details.';
+
     /** Between Start and Online. */
     private const STARTING = [RunStatus::Provisioning, RunStatus::Booting, RunStatus::Starting];
 
@@ -49,6 +52,10 @@ class ServerPresenter
             default => [null, null],
         };
 
+        // The error text holds script output, SSH/provider messages, storage user@host and
+        // VPS addresses (#5527): admins only. Everyone else gets the label and a plain line.
+        $error = self::errorFor($error, $viewer);
+
         return [
             'id' => $server->id,
             'name' => $server->name,
@@ -79,6 +86,19 @@ class ServerPresenter
             'can_stop' => $run !== null && self::mayStop($run, $viewer),
             'can_force_delete' => $run?->status === RunStatus::StopFailed && $viewer?->isAdmin() === true,
         ];
+    }
+
+    /**
+     * A run's error as this viewer may see it: the text for admins, a plain line for
+     * everyone else (#5527), null when there's none.
+     */
+    public static function errorFor(?string $error, ?User $viewer): ?string
+    {
+        if ($error === null) {
+            return null;
+        }
+
+        return $viewer?->isAdmin() === true ? $error : self::PUBLIC_ERROR;
     }
 
     /**
