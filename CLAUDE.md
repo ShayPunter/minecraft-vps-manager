@@ -204,6 +204,15 @@ a real paste would use the machine's clipboard.
   `ServerType`'s fields change, or the cached arrays no longer fit the constructor.
   E2E's `server-types.spec` signs in as `catalog-admin@example.com` (Fortify's login limit).
 - The welcome page has no app layout, so it mounts its own `<Toaster />`.
+- Front-end weight (#5753): the layouts are `defineAsyncComponent`s in `app.ts` (own chunks;
+  `/` and `/s/{token}` load none), defined once so Inertia keeps the same layout mounted
+  across visits. Server lists poll through `useStatusPoll` (`composables/useStatusPoll.ts`):
+  5 s while any server is provisioning/booting/starting/stopping, else 30 s, restarted when
+  the statuses change. The run log view keeps the newest `maxLines` (`RunLog::MAX_LINES`).
+  Fonts are committed (`resources/fonts/instrument-sans`, latin woff2 + OFL) and loaded with
+  `local()`: no font download during `vp build`, so a Bunny timeout can't fail a Forge
+  deploy. `performance.spec` drives the polls with `page.clock` (paused, and each poll
+  answered before the clock moves on: overlapping polls cancel each other).
 - World storage (#5288, `App\WorldStorage`): one SFTP or FTP(S) server, set in Admin →
   World storage (`WorldStorageSetting`, one row; password and private key `encrypted` +
   `$hidden`, never sent to the page: it only gets `has_password`). The env

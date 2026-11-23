@@ -3,7 +3,7 @@ import { wayfinder } from '@laravel/vite-plugin-wayfinder';
 import tailwindcss from '@tailwindcss/vite';
 import vue from '@vitejs/plugin-vue';
 import laravel from 'laravel-vite-plugin';
-import { bunny } from 'laravel-vite-plugin/fonts';
+import { local } from 'laravel-vite-plugin/fonts';
 import { defineConfig, lazyPlugins } from 'vite-plus';
 
 export default defineConfig({
@@ -11,9 +11,17 @@ export default defineConfig({
         laravel({
             input: ['resources/css/app.css', 'resources/js/app.ts'],
             refresh: true,
+            // Committed font files (#5753): a remote provider downloads them during
+            // `vp build`, and one timeout there fails a Forge deploy (Panel #3197).
+            // The same latin files Bunny served; OFL.txt is their licence.
             fonts: [
-                bunny('Instrument Sans', {
-                    weights: [400, 500, 600],
+                local('Instrument Sans', {
+                    variants: ([400, 500, 600] as const).map((weight) => ({
+                        src: `resources/fonts/instrument-sans/instrument-sans-latin-${weight}-normal.woff2`,
+                        weight,
+                    })),
+                    // As before: no metric-matched fallback faces (that needs "fontaine").
+                    optimizedFallbacks: false,
                 }),
             ],
         }),

@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { Head, Link, usePoll } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
 import ServerCard from '@/components/ServerCard.vue';
 import { Button } from '@/components/ui/button';
+import { useStatusPoll } from '@/composables/useStatusPoll';
 import { Toaster } from '@/components/ui/sonner';
 import { dashboard, login } from '@/routes';
 import type { ServerSummary } from '@/types/servers';
 
-defineProps<{
+const props = defineProps<{
     servers: ServerSummary[];
 }>();
 
-usePoll(5000, { only: ['servers'] });
+useStatusPoll(() => props.servers.map((server) => server.status), ['servers']);
 </script>
 
 <template>

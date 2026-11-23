@@ -32,6 +32,7 @@ const props = defineProps<{
     } | null;
     lines: LogLine[];
     retentionDays: number;
+    maxLines: number;
 }>();
 
 defineOptions({
@@ -49,6 +50,8 @@ const statusLabel = ref(props.run?.status_label ?? '');
 const error = ref(props.run?.error ?? null);
 const active = ref(props.run?.active ?? false);
 const follow = ref(true);
+// Lines dropped from the top of the view: an open tab keeps only the newest maxLines (#5753).
+const trimmed = ref(false);
 const box = ref<HTMLElement | null>(null);
 let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -100,6 +103,13 @@ async function poll(): Promise<void> {
         };
 
         lines.value.push(...data.lines);
+
+        const excess = lines.value.length - props.maxLines;
+
+        if (excess > 0) {
+            lines.value.splice(0, excess);
+            trimmed.value = true;
+        }
         statusLabel.value = data.status_label;
         error.value = data.error;
         active.value = data.active;
@@ -199,6 +209,13 @@ onBeforeUnmount(() => {
                 class="h-[60vh] overflow-auto rounded-xl border border-sidebar-border/70 bg-black p-3 font-mono text-xs leading-5 text-neutral-100"
                 data-test="log-lines"
             >
+                <p
+                    v-if="trimmed"
+                    class="text-neutral-400"
+                    data-test="log-trimmed"
+                >
+                    Showing the newest {{ maxLines.toLocaleString() }} lines.
+                </p>
                 <p v-if="lines.length === 0" class="text-neutral-400">
                     No log lines yet.
                     <template v-if="active"

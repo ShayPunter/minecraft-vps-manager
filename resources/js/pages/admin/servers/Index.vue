@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Form, Head, Link, usePoll } from '@inertiajs/vue3';
+import { Form, Head, Link } from '@inertiajs/vue3';
 import ServerController from '@/actions/App/Http/Controllers/Admin/ServerController';
 import ServerLogController from '@/actions/App/Http/Controllers/Admin/ServerLogController';
 import CopyAddress from '@/components/CopyAddress.vue';
@@ -17,10 +17,11 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
+import { useStatusPoll } from '@/composables/useStatusPoll';
 import { create, edit, index } from '@/routes/admin/servers';
 import type { ServerSummary } from '@/types/servers';
 
-defineProps<{
+const props = defineProps<{
     servers: ServerSummary[];
     maxRunning: number;
 }>();
@@ -31,7 +32,7 @@ defineOptions({
     },
 });
 
-usePoll(5000, { only: ['servers'] });
+useStatusPoll(() => props.servers.map((server) => server.status), ['servers']);
 </script>
 
 <template>
