@@ -23,6 +23,10 @@ return [
     // Minecraft's port, used to tell when a server is up.
     'port' => 25565,
 
+    // Wake on join (#5620): the port `servers:waker` listens on. A DNS name can only send
+    // players to 25565, so change it only to try the waker out locally.
+    'waker_port' => (int) (env('MVM_WAKER_PORT') ?: 25565),
+
     // Watchdog (#5283). Idle minutes before a stop are set per server (default 15).
     // A run that isn't online this long after Start is deleted and marked failed.
     'boot_timeout_minutes' => (int) (env('MVM_BOOT_TIMEOUT_MINUTES') ?: 20),

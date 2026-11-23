@@ -89,6 +89,7 @@ export type ServerDefinition = {
     java_version: number;
     idle_minutes: number;
     subdomain: string | null;
+    wake_on_join?: boolean;
     eula_accepted_at?: string | null;
     eula_accepted_by?: string | null;
     software: SoftwareValue;

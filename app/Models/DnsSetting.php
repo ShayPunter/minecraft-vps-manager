@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $domain the zone's name, e.g. example.com
  * @property string $zone_id Cloudflare's zone id
  * @property string $api_token encrypted with APP_KEY
+ * @property string|null $waker_ipv4 the public address `servers:waker` listens on (#5620); null = no waker
  * @property int|null $updated_by
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at

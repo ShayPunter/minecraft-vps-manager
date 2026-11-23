@@ -45,6 +45,7 @@ use Illuminate\Support\Str;
  * @property int $idle_minutes minutes with nobody on before the watchdog stops it
  * @property int|null $current_world_archive_id the archive the next start downloads (#5288)
  * @property string|null $subdomain its name inside the DNS zone, e.g. "atm9" → atm9.<domain> (#5338)
+ * @property bool $wake_on_join while stopped, its name points at the waker and a join starts it (#5620)
  * @property CarbonImmutable|null $eula_accepted_at when an admin accepted the Minecraft EULA for it (#5367)
  * @property int|null $eula_accepted_by who did
  * @property-read User|null $eulaAcceptor
@@ -54,7 +55,7 @@ use Illuminate\Support\Str;
  * @property-read ServerRun|null $latestRun
  * @property-read WorldArchive|null $currentWorldArchive
  */
-#[Fillable(['name', 'slug', 'description', 'visibility', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'software', 'minecraft_version', 'pack_url', 'modrinth_project_id', 'modrinth_version_id', 'modrinth_title', 'heap_mb', 'properties', 'whitelist', 'ops', 'run_sh', 'user_jvm_args'])]
+#[Fillable(['name', 'slug', 'description', 'visibility', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'wake_on_join', 'software', 'minecraft_version', 'pack_url', 'modrinth_project_id', 'modrinth_version_id', 'modrinth_title', 'heap_mb', 'properties', 'whitelist', 'ops', 'run_sh', 'user_jvm_args'])]
 class Server extends Model
 {
     /** @use HasFactory<ServerFactory> */
@@ -199,6 +200,7 @@ class Server extends Model
             'eula_accepted_at' => 'datetime',
             'java_version' => 'integer',
             'idle_minutes' => 'integer',
+            'wake_on_join' => 'boolean',
             'heap_mb' => 'integer',
             'current_world_archive_id' => 'integer',
         ];

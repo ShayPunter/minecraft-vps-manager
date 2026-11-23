@@ -83,9 +83,21 @@ one before the VPS is deleted. Servers can't start until world storage is set up
    is deleted when the server stops. Records the app makes carry
    `managed-by=minecraft-vps-manager` in their comment; records you made yourself are never
    changed, and a name that already has one is left alone (players get the IP instead).
-9. **Check it**: `php artisan app:doctor`. It tries the token with one read-only call, checks
-   the app can make SSH keys, has the worker run a test job, checks the scheduler ran in the last
-   3 minutes, tests world storage (writes and deletes a small file) and DNS if it's set up, and says where alerts go. It prints no secrets and exits 1 if anything fails (DNS only warns).
+9. **Wake on join (optional, needs DNS)**: a stopped server starts when someone joins its
+   name. While such a server is stopped, its name points at the waker instead of being
+   deleted. In the Minecraft server list it shows its name, "Asleep. Join to start it" and
+   its icon; joining starts it (a guest start: the guest limits above apply) and tells the
+   player to join again once it's up. Pings never start anything. Once the VPS has its IP
+   the name moves to it as usual, and back to the waker when it stops. To set it up, add a
+   Forge daemon (server → Daemons): command `php artisan servers:waker`, directory the
+   site's folder (`/home/forge/<site>`), user `forge`. It listens on TCP 25565 and restarts
+   itself after `php artisan queue:restart` (Forge's deploy script runs it), so it picks up
+   new code. Open TCP port 25565 to everyone (server → Network). In the app, Admin → DNS:
+   **Waker address** = the Forge server's public IPv4, then **Test and save**. Then tick
+   **Wake on join** on a server that has a subdomain.
+10. **Check it**: `php artisan app:doctor`. It tries the token with one read-only call, checks
+    the app can make SSH keys, has the worker run a test job, checks the scheduler ran in the last
+    3 minutes, tests world storage (writes and deletes a small file) and DNS if it's set up, checks the waker answered in the last 3 minutes when a waker address is set, and says where alerts go. It prints no secrets and exits 1 if anything fails (DNS and the waker only warn).
 
 ### How a start works
 

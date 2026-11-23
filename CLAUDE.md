@@ -464,6 +464,44 @@ a real paste would use the machine's clipboard.
   (records in the cache; `bad-token`, zone `ffff…` 404, zone `eeee…` = `other.example`;
   `seed()`, `records()`, `failWith()`). Admin → DNS lists the managed A records it finds.
   `app:doctor` WARNs (never FAILs) on DNS. Not checked against the real Cloudflare API.
+- Wake on join (#5620, `App\Waker`): `servers.wake_on_join` (needs a subdomain;
+  `ServerRequest` refuses it without one) and `dns_settings.waker_ipv4` (Admin → DNS,
+  public IPv4 only). **DNS**: while such a server has no active run whose VPS holds its
+  name, the name is "parked": an A record at the waker, comment
+  `managed-by=minecraft-vps-manager mvm-waker-server=<server id>`
+  (`DnsRecord::wakerServerId()`). `Dns::point()` replaces it like any managed record
+  with no active owner; `release()` parks again (`syncParked($server)`) when the server
+  wakes on join; `syncParked()` (no argument: every server; the sweep, and after saving
+  Admin → DNS) makes, moves and deletes waker records to match `shouldPark()`, never
+  touches unmanaged records, and `deleteOrphans()` skips waker records. A run still
+  provisioning keeps the parked record (pings show "Starting"). `point()` and the park
+  share a cache lock per server (`mvm:dns:server:<id>`). Saving a server calls
+  `syncParked($server)`, wrapped. **The waker**: `servers:waker` (`RunWaker`, a Forge
+  daemon, `--host` 0.0.0.0, `--port` = `MVM_WAKER_PORT` 25565, exits after
+  `queue:restart` or `--stop-after` 3600 s; `Heartbeat::WAKER` every minute, which
+  Admin → DNS and `app:doctor` (WARN only) show). `WakerLoop` (non-blocking
+  `stream_select`, `tick()` drives one round, so tests run it in-process; 256
+  connections, 8 per IP, 10 s each, write side shut after the answer then read away for
+  2 s), `Session` (handshake → status: Status Request → JSON, Ping → Pong; handshake →
+  login/transfer: Login Start → Login Disconnect with a JSON text; a first packet that
+  isn't id 0, the 0xFE legacy ping, packets over 2 KB → `ProtocolError`, hung up), `Packets`
+  (VarInt as Java's int32, strings, framing). The host is cut at `\0` (Forge's `FML3`
+  marker), lowercased, trailing dot dropped. `WakerReplies`: `<subdomain>.<domain>` →
+  server; status = name + a state line (Asleep / Starting with `BootEstimate` / Online:
+  "refresh" or, with no own record, its IP / Stopping), version name = the state with
+  protocol -1 (the client shows it in red where the player count goes), favicon from
+  `Favicons` (the sweep fetches `icon_url` with `Http::` and caches a 64×64 PNG data URI
+  for a day, failures for an hour; needs GD: local PHP here lacks it, load it with
+  `-d extension=<php dir>/ext/php_gd.dll` and run `vendor/bin/phpunit` directly, since
+  `artisan test` drops `-d`; CI installs gd). Join = `ServerLauncher::start($server,
+  null, $ip)` (guest limits), `waker-start:<ip>` limiter 5/min, logs "Server started by a
+  join" with the unverified player name; no Mojang check (whitelists aren't consulted).
+  `WakerLoopTest` runs it over real sockets on 127.0.0.1. Checked for real (Nov 23)
+  with PrismarineJS `minecraft-protocol` 1.68 clients (1.21.4, 1.20.1, 1.8.9) against
+  `servers:waker` on a throwaway SQLite database: ping (name, line, icon), join started
+  it, next ping "Starting", join again "starting", the fourth guest start of the day
+  refused. Its `ping()` puts `host` in the handshake (no `fakeHost`): pass a `connect`
+  hook that dials 127.0.0.1. Not tried with the real game or real Cloudflare.
 - `App\Cloud` (#5281): `CloudProvider` interface (create/find/delete server, managed
   servers, create/delete/list managed SSH keys, server types, locations), `HetznerCloud`
   (Laravel `Http::`, token from `config('services.hetzner.*')`), `FakeCloudProvider` (state in the cache, so it survives

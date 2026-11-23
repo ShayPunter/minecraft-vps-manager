@@ -20,6 +20,7 @@ defineProps<{
     config: ServerConfig;
     guestStarts: GuestStartLimits;
     dnsDomain: string | null;
+    wakerAddress: string | null;
 }>();
 
 defineOptions({
@@ -52,6 +53,7 @@ defineOptions({
                 :java-versions="javaVersions"
                 :software="software"
                 :dns-domain="dnsDomain"
+                :waker-address="wakerAddress"
                 :guest-starts="guestStarts"
             />
             <ServerConfigFields :errors="errors" :config="config" />

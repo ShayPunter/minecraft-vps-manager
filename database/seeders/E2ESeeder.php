@@ -110,6 +110,13 @@ class E2ESeeder extends Seeder
                 'two_factor_confirmed_at' => now()->subYear(),
             ]);
         }
+
+        // waker.spec (#5620), its own admin for Fortify's login limit.
+        User::factory()->admin()->create([
+            'name' => 'Wren Waker',
+            'email' => 'waker-admin@example.com',
+            'created_at' => now()->subYear(),
+        ]);
     }
 
     /** Base32; tests/e2e/two-factor.spec.ts makes the codes from them. */
