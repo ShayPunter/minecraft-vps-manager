@@ -77,7 +77,7 @@ class ServerDnsTest extends TestCase
     {
         $server = Server::factory()->create(['name' => strtoupper($slug), 'slug' => $slug, 'subdomain' => $subdomain]);
 
-        return $this->launcher()->start($server, null, null)->refresh();
+        return $this->launcher()->start($server, User::factory()->create(), null)->refresh();
     }
 
     private function online(ServerRun $run): ServerRun
