@@ -89,5 +89,12 @@ class E2ESeeder extends Seeder
             'email' => 'modpack-admin@example.com',
             'created_at' => now()->subYear(),
         ]);
+
+        // account-hardening.spec (#5532): a player whose email the spec changes.
+        User::factory()->create([
+            'name' => 'Harper Hardening',
+            'email' => 'hardening@example.com',
+            'created_at' => now()->subYear(),
+        ]);
     }
 }

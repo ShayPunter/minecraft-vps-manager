@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Form, Head, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import DeleteUser from '@/components/DeleteUser.vue';
 import Heading from '@/components/Heading.vue';
@@ -23,6 +23,10 @@ defineOptions({
 
 const page = usePage();
 const user = computed(() => page.props.auth.user);
+
+// Card 5532: a new email address needs the current password.
+const email = ref(user.value.email);
+const changesEmail = computed(() => email.value !== user.value.email);
 </script>
 
 <template>
@@ -63,12 +67,29 @@ const user = computed(() => page.props.auth.user);
                     type="email"
                     class="mt-1 block w-full"
                     name="email"
-                    :default-value="user.email"
+                    v-model="email"
                     required
                     autocomplete="username"
                     placeholder="Email address"
                 />
                 <InputError class="mt-2" :message="errors.email" />
+            </div>
+
+            <div v-if="changesEmail" class="grid gap-2">
+                <Label for="current_password">Current password</Label>
+                <Input
+                    id="current_password"
+                    type="password"
+                    class="mt-1 block w-full"
+                    name="current_password"
+                    required
+                    autocomplete="current-password"
+                    placeholder="Current password"
+                />
+                <p class="text-sm text-muted-foreground">
+                    Changing your email address needs your current password.
+                </p>
+                <InputError class="mt-2" :message="errors.current_password" />
             </div>
 
             <div class="flex items-center gap-4">
