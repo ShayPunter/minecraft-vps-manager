@@ -141,6 +141,12 @@ a real paste would use the machine's clipboard.
   where alerts go. `App\Support\Heartbeat` keeps the
   beats in the cache as ISO strings; `servers:sweep` also queues a `QueueHeartbeat`. FAIL =
   exit 1, WARN doesn't fail. Never prints a secret (tested). The Forge setup steps are in the README.
+- Security headers (#5533, `App\Http\Middleware\SecurityHeaders`, appended globally): HSTS
+  one year (no includeSubDomains/preload), CSP `base-uri 'self'; object-src 'none';
+  frame-ancestors 'none'` only (the layout's dark-mode script is inline, so a full CSP needs
+  a nonce), nosniff, Permissions-Policy, and Referrer-Policy strict-origin-when-cross-origin
+  unless the response set its own (the share page keeps no-referrer). No X-Frame-Options:
+  nginx sends SAMEORIGIN and frame-ancestors wins. `SecurityHeadersTest`.
 - Cloudflare (#5703): the site answers through Cloudflare, so `bootstrap/app.php` trusts
   X-Forwarded-For/-Proto from Cloudflare's published ranges only (`config/trustedproxy.php`,
   copied from MCPacks; `TRUSTED_PROXIES` replaces the list). `$request->ip()` is then the
