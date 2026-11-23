@@ -43,6 +43,7 @@ class ServerRequest extends FormRequest
             'icon_url' => filled($this->input('icon_url')) ? $this->input('icon_url') : null,
             'description' => filled($this->input('description')) ? $this->input('description') : null,
             'subdomain' => $this->normalisedSubdomain(),
+            'wake_on_join' => $this->boolean('wake_on_join'),
         ]);
     }
 
@@ -105,6 +106,8 @@ class ServerRequest extends FormRequest
                 'nullable', 'string', 'max:190', 'regex:'.Server::SUBDOMAIN_PATTERN,
                 Rule::unique(Server::class, 'subdomain')->ignore($server instanceof Server ? $server->id : null),
             ],
+            // While stopped, its name points at the waker and a join starts it (#5620).
+            'wake_on_join' => ['boolean'],
             // server.properties, whitelist/ops, run.sh / user_jvm_args.txt (#5377).
             ...ServerConfigForm::rules(),
         ];
@@ -191,6 +194,11 @@ class ServerRequest extends FormRequest
                     } elseif (strlen($name) > 253) {
                         $validator->errors()->add('subdomain', 'That name is too long for DNS.');
                     }
+                }
+
+                // Players wake it by joining its name (#5620), so it needs one.
+                if ($this->boolean('wake_on_join') && ! is_string($subdomain)) {
+                    $validator->errors()->add('wake_on_join', 'Give it a subdomain first: players join that name to wake it.');
                 }
             },
             function (Validator $validator): void {

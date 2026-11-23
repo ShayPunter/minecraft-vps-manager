@@ -15,6 +15,9 @@ class Heartbeat
 
     public const QUEUE = 'queue';
 
+    /** `servers:waker` (#5620), once a minute while it listens. */
+    public const WAKER = 'waker';
+
     public static function beat(string $name): void
     {
         Cache::forever("mvm:heartbeat:{$name}", now()->toIso8601String());

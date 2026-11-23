@@ -14,13 +14,15 @@ type DnsSettings = {
     zone_id: string;
     has_token: boolean;
     updated_at: string | null;
+    waker_ipv4: string;
+    waker_seen_at: string | null;
 };
 
 const props = defineProps<{
     dns: DnsSettings;
     problem: string | null;
     servers: { name: string; slug: string; address: string | null }[];
-    records: { name: string; content: string }[] | null;
+    records: { name: string; content: string; waker: boolean }[] | null;
     recordsError: string | null;
 }>();
 
@@ -37,7 +39,15 @@ const form = useForm({
     domain: props.dns.domain,
     zone_id: props.dns.zone_id,
     api_token: '',
+    waker_ipv4: props.dns.waker_ipv4,
 });
+
+// When servers:waker last said it was listening (#5620), in the viewer's words.
+const wakerSeen = computed(() =>
+    props.dns.waker_seen_at
+        ? new Date(props.dns.waker_seen_at).toLocaleString()
+        : null,
+);
 
 const errors = computed(
     () => form.errors as Record<string, string | undefined>,
@@ -95,6 +105,9 @@ function save(): void {
                         <span class="font-mono"
                             >{{ record.name }} → {{ record.content }}</span
                         >
+                        <span v-if="record.waker" class="text-muted-foreground">
+                            (the waker)</span
+                        >
                     </li>
                 </ul>
                 <p
@@ -102,7 +115,8 @@ function save(): void {
                     class="text-muted-foreground"
                     data-test="dns-no-records"
                 >
-                    No records: no named server is running.
+                    No records: no named server is running or waiting at the
+                    waker.
                 </p>
             </template>
             <p
@@ -169,6 +183,35 @@ function save(): void {
                     with the "Edit zone DNS" template, for this domain only.
                 </p>
                 <InputError :message="errors.api_token" />
+            </div>
+
+            <div class="grid gap-2">
+                <Label for="waker_ipv4">Waker address (optional)</Label>
+                <Input
+                    id="waker_ipv4"
+                    v-model="form.waker_ipv4"
+                    name="waker_ipv4"
+                    class="font-mono"
+                    placeholder="203.0.113.10"
+                    autocomplete="off"
+                />
+                <p class="text-sm text-muted-foreground" data-test="waker-hint">
+                    For servers set to wake on join: while one is stopped, its
+                    name points here instead of being deleted. The waker (the
+                    <span class="font-mono">php artisan servers:waker</span>
+                    daemon, on this app's server with TCP port 25565 open) shows
+                    it as asleep in the server list and starts it when someone
+                    joins. Use this server's public IPv4 address; leave it empty
+                    to turn the waker off.
+                    <template v-if="wakerSeen"
+                        >The waker was last listening at
+                        {{ wakerSeen }}.</template
+                    >
+                    <template v-else-if="dns.waker_ipv4"
+                        >The waker hasn't run yet.</template
+                    >
+                </p>
+                <InputError :message="errors.waker_ipv4" />
             </div>
 
             <p

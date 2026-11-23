@@ -6,8 +6,11 @@ use App\Cloud\CloudException;
 use App\Cloud\CloudProvider;
 use App\Dns\Dns;
 use App\Enums\RunStatus;
+use App\Models\Server;
 use App\Models\ServerRun;
+use App\Waker\Favicons;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Keeps the bill down without losing a world (#5283).
@@ -16,7 +19,8 @@ use Illuminate\Support\Facades\Log;
  *           and stops online servers nobody has played on for the server's idle minutes.
  *   sweep() every 10 minutes: deletes VPSes with the app's label that no active run knows,
  *           retries failed stops, deletes the app's DNS records no active run owns (#5338),
- *           and alerts once on runs older than max_run_hours.
+ *           fixes the waker's records and icons (#5620), and alerts once on runs older than
+ *           max_run_hours.
  */
 class Watchdog
 {
@@ -26,6 +30,7 @@ class Watchdog
         private readonly CloudProvider $cloud,
         private readonly Alerter $alerter,
         private readonly Dns $dns,
+        private readonly Favicons $favicons,
     ) {}
 
     public function watch(): void
@@ -42,7 +47,23 @@ class Watchdog
         $this->deleteOrphans();
         $this->deleteOrphanKeys();
         $this->dns->deleteOrphans();
+        $this->dns->syncParked();
+        $this->warmWakerIcons();
         $this->alertLongRuns();
+    }
+
+    /**
+     * The waker reads server icons from the cache only (#5620): fetch them here.
+     */
+    private function warmWakerIcons(): void
+    {
+        foreach (Server::query()->where('wake_on_join', true)->whereNotNull('icon_url')->get() as $server) {
+            try {
+                $this->favicons->warm($server);
+            } catch (Throwable $e) {
+                Log::info("Waker icon of {$server->slug} not refreshed: {$e->getMessage()}");
+            }
+        }
     }
 
     /**

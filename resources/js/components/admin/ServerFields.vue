@@ -20,6 +20,7 @@ const props = defineProps<{
     javaVersions: number[];
     software: SoftwareOptions;
     dnsDomain?: string | null;
+    wakerAddress?: string | null;
     server?: ServerDefinition;
     hasSavedWorld?: boolean;
     guestStarts?: GuestStartLimits;
@@ -67,6 +68,8 @@ const savedInstallCommand = computed(() =>
 );
 
 const subdomain = ref(props.server?.subdomain ?? '');
+// Wake on join (#5620): a native checkbox, like the EULA box, so the form posts it as-is.
+const wakeOnJoin = ref(props.server?.wake_on_join ?? false);
 
 // Who sees it (#5462). Same wording as App\Enums\Visibility.
 const visibility = ref<Visibility>(props.server?.visibility ?? 'private');
@@ -592,5 +595,32 @@ const currentTypeRetired = computed(
             </template>
         </p>
         <InputError :message="errors.subdomain" />
+    </div>
+
+    <div v-if="dnsDomain" class="grid gap-2">
+        <div class="flex items-center gap-2">
+            <input
+                id="wake_on_join"
+                v-model="wakeOnJoin"
+                type="checkbox"
+                name="wake_on_join"
+                value="1"
+                class="size-4"
+            />
+            <Label for="wake_on_join">Wake on join</Label>
+        </div>
+        <p class="text-sm text-muted-foreground" data-test="wake-on-join-hint">
+            While it's stopped, its name points at the waker: the Minecraft
+            server list shows it as asleep, and joining starts it. Anyone who
+            knows the name can start it this way: it counts as a guest start, so
+            the guest limits apply.
+            <template v-if="!wakerAddress"
+                ><strong
+                    >Set the waker address in Admin → DNS first, or nothing
+                    answers the name while it's stopped.</strong
+                ></template
+            >
+        </p>
+        <InputError :message="errors.wake_on_join" />
     </div>
 </template>

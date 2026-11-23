@@ -21,6 +21,14 @@ final readonly class DnsRecord
         return self::MANAGED." mvm-run-id={$runId}";
     }
 
+    /**
+     * A stopped server's name pointing at the waker (#5620).
+     */
+    public static function commentForWaker(int $serverId): string
+    {
+        return self::MANAGED." mvm-waker-server={$serverId}";
+    }
+
     public function isManaged(): bool
     {
         return $this->comment !== null && str_starts_with($this->comment, self::MANAGED);
@@ -28,7 +36,20 @@ final readonly class DnsRecord
 
     public function runId(): ?int
     {
-        if (! $this->isManaged() || preg_match('/(?:^|\s)mvm-run-id=(\d+)(?:\s|$)/', (string) $this->comment, $m) !== 1) {
+        return $this->label('mvm-run-id');
+    }
+
+    /**
+     * The server this waker record is for, or null when it isn't one.
+     */
+    public function wakerServerId(): ?int
+    {
+        return $this->label('mvm-waker-server');
+    }
+
+    private function label(string $key): ?int
+    {
+        if (! $this->isManaged() || preg_match('/(?:^|\s)'.$key.'=(\d+)(?:\s|$)/', (string) $this->comment, $m) !== 1) {
             return null;
         }
 

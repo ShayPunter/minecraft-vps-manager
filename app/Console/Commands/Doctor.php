@@ -7,6 +7,7 @@ use App\Cloud\CloudProvider;
 use App\Dns\Dns;
 use App\Enums\Role;
 use App\Jobs\QueueHeartbeat;
+use App\Models\Server;
 use App\Models\User;
 use App\Servers\SshKeyPair;
 use App\Support\Heartbeat;
@@ -40,6 +41,7 @@ class Doctor extends Command
         $this->checkAdmins();
         $this->checkWorldStorage($storage);
         $this->checkDns($dns);
+        $this->checkWaker($dns);
         $this->checkAlerts();
 
         $this->table(['', 'Check', 'Details'], $this->rows);
@@ -144,6 +146,31 @@ class Doctor extends Command
 
         $this->row('FAIL', 'Scheduler', ($last === null ? "servers:watch hasn't run yet." : "servers:watch last ran {$last->diffForHumans()}.")
             .' Turn on the Laravel scheduler for this site in Forge (it runs schedule:run every minute).');
+    }
+
+    /**
+     * Wake on join (#5620) is optional, so a WARN at most: without the waker, joining a stopped
+     * server's name just fails, and the website still starts it.
+     */
+    private function checkWaker(Dns $dns): void
+    {
+        $address = $dns->wakerAddress();
+        $waking = Server::query()->where('wake_on_join', true)->whereNotNull('subdomain')->count();
+
+        if ($address === null) {
+            $waking > 0
+                ? $this->row('WARN', 'Waker', "{$waking} server(s) wake on join, but Admin → DNS has no waker address.")
+                : $this->row('OK', 'Waker', 'Not used (no waker address in Admin → DNS). Optional.');
+
+            return;
+        }
+
+        $last = Heartbeat::last(Heartbeat::WAKER);
+
+        $last !== null && $last->greaterThan(now()->subMinutes(3))
+            ? $this->row('OK', 'Waker', "servers:waker was listening {$last->diffForHumans()}; {$waking} server(s) wake on join at {$address}.")
+            : $this->row('WARN', 'Waker', ($last === null ? "servers:waker hasn't run yet." : "servers:waker last ran {$last->diffForHumans()}.")
+                ." Add a Forge daemon `php artisan servers:waker` and open TCP port 25565 in the server's firewall, or joins to {$address} fail.");
     }
 
     private function checkAdmins(): void

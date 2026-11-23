@@ -25,6 +25,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 /**
  * Admin → Servers: define Minecraft servers, and stop a running one by hand.
@@ -45,6 +46,7 @@ class ServerController extends Controller
             'catalog' => $catalog->formOptions(),
             'javaVersions' => config('minecraft.java_versions'),
             'dnsDomain' => app(Dns::class)->saved()?->domain,
+            'wakerAddress' => app(Dns::class)->wakerAddress(),
             'software' => $this->softwareOptions(),
             'config' => ServerConfigForm::props(null),
             'guestStarts' => GuestStarts::props(null),
@@ -55,6 +57,7 @@ class ServerController extends Controller
     {
         $server = Server::query()->create($request->serverAttributes());
         $this->recordEula($request, $server);
+        $this->syncWakerRecord($server);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => "Created {$server->name}."]);
 
@@ -72,7 +75,7 @@ class ServerController extends Controller
 
         return Inertia::render('admin/servers/Edit', [
             'server' => [
-                ...$server->only(['id', 'name', 'slug', 'description', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'minecraft_version', 'pack_url', 'modrinth_project_id', 'modrinth_version_id', 'modrinth_title', 'heap_mb']),
+                ...$server->only(['id', 'name', 'slug', 'description', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'wake_on_join', 'minecraft_version', 'pack_url', 'modrinth_project_id', 'modrinth_version_id', 'modrinth_title', 'heap_mb']),
                 'software' => $server->software->value,
                 'visibility' => $server->visibility->value,
                 'share_url' => $server->shareUrl(),
@@ -80,6 +83,7 @@ class ServerController extends Controller
                 'eula_accepted_by' => $server->eulaAcceptor?->name,
             ],
             'dnsDomain' => app(Dns::class)->saved()?->domain,
+            'wakerAddress' => app(Dns::class)->wakerAddress(),
             'catalog' => $catalog->formOptions(),
             'javaVersions' => config('minecraft.java_versions'),
             'software' => $this->softwareOptions(),
@@ -109,10 +113,24 @@ class ServerController extends Controller
     {
         $server->update($request->serverAttributes());
         $this->recordEula($request, $server);
+        $this->syncWakerRecord($server);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => "Saved {$server->name}. Changes apply from the next start."]);
 
         return to_route('admin.servers.index');
+    }
+
+    /**
+     * Wake on join or the subdomain changed (#5620): park the name at the waker, or stop.
+     * Never in the way of the save: the sweep fixes it within 10 minutes.
+     */
+    private function syncWakerRecord(Server $server): void
+    {
+        try {
+            app(Dns::class)->syncParked($server);
+        } catch (Throwable $e) {
+            Log::warning("Waker DNS record of {$server->slug} not synced: {$e->getMessage()}");
+        }
     }
 
     /**

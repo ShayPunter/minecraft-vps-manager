@@ -10,12 +10,14 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\DnsRequest;
 use App\Models\DnsSetting;
 use App\Models\Server;
+use App\Support\Heartbeat;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 /**
  * Admin → DNS (#5338): the Cloudflare zone server names live in. Saving tests the token
@@ -35,7 +37,7 @@ class DnsController extends Controller
         if ($zone !== null) {
             try {
                 $records = array_values(array_map(
-                    fn (DnsRecord $record): array => ['name' => $record->name, 'content' => $record->content],
+                    fn (DnsRecord $record): array => ['name' => $record->name, 'content' => $record->content, 'waker' => $record->wakerServerId() !== null],
                     array_filter($provider->managedRecords($zone), fn (DnsRecord $record): bool => $record->type === 'A'),
                 ));
             } catch (DnsException $e) {
@@ -49,6 +51,8 @@ class DnsController extends Controller
                 'zone_id' => $saved->zone_id ?? '',
                 'has_token' => $saved !== null,
                 'updated_at' => $saved?->updated_at?->toIso8601String(),
+                'waker_ipv4' => $saved->waker_ipv4 ?? '',
+                'waker_seen_at' => Heartbeat::last(Heartbeat::WAKER)?->toIso8601String(),
             ],
             'problem' => $dns->problem(),
             'records' => $records,
@@ -80,8 +84,18 @@ class DnsController extends Controller
         $row->domain = $zone->domain;
         $row->zone_id = $zone->zoneId;
         $row->api_token = $zone->token;
+        $waker = $request->validated('waker_ipv4');
+        $row->waker_ipv4 = is_string($waker) ? $waker : null;
         $row->updated_by = $request->user()?->id;
         $row->save();
+
+        // The waker's address may have changed (#5620): move the parked names. Never in the
+        // way of the save; the sweep does it again within 10 minutes.
+        try {
+            $dns->syncParked();
+        } catch (Throwable $e) {
+            Log::warning("Waker DNS records not synced: {$e->getMessage()}");
+        }
 
         $this->log($request, 'DNS settings saved');
 
@@ -99,6 +113,7 @@ class DnsController extends Controller
             'by' => $request->user()?->id,
             'domain' => $request->input('domain'),
             'zone_id' => $request->input('zone_id'),
+            'waker_ipv4' => $request->input('waker_ipv4'),
         ]);
     }
 }

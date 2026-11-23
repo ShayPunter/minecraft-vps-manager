@@ -27,6 +27,7 @@ const props = defineProps<{
     config: ServerConfig;
     guestStarts: GuestStartLimits;
     dnsDomain: string | null;
+    wakerAddress: string | null;
     world: {
         archives: {
             id: number;
@@ -101,6 +102,7 @@ defineOptions({
                 :java-versions="javaVersions"
                 :software="software"
                 :dns-domain="dnsDomain"
+                :waker-address="wakerAddress"
                 :server="props.server"
                 :has-saved-world="world.archives.some((a) => a.current)"
                 :guest-starts="guestStarts"
