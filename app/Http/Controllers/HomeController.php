@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\Visibility;
 use App\Models\Server;
 use App\Servers\ServerLauncher;
 use App\Servers\ServerPresenter;
@@ -19,7 +20,7 @@ class HomeController extends Controller
         $launcher->advanceActive();
 
         return Inertia::render('Welcome', [
-            'servers' => ServerPresenter::list(Server::query()->where('is_public', true), $request->user()),
+            'servers' => ServerPresenter::list(Server::query()->where('visibility', Visibility::Public), $request->user()),
         ]);
     }
 }

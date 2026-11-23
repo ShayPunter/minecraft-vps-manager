@@ -78,6 +78,19 @@ output. Run with the real binary:
   Don't use `escapeshellarg()` there: on Windows it double-quotes, and the script runs on Linux.
 - Start is `POST /servers/{slug}/start` (`throttle:server-start`, 5/min per user or IP).
   Public servers can be started by guests (#5276); private ones 404 for guests.
+- Visibility (#5462, `App\Enums\Visibility`, `servers.visibility`, replaced `is_public`):
+  public (home page, guests start it), private (every signed-in dashboard), link (only
+  admins' dashboard and Admin, plus its share page). A link-only server always has a share
+  token (`Server::booted()` saving hook: made when it becomes link only, wiped when it stops
+  being one, so switching away kills the link); 40 chars, `share_token` encrypted (Admin
+  shows the link again) + `share_token_hash` (SHA-256, unique, the lookup), both `$hidden`.
+  `SharedServerController`: `GET /s/{token}` (Inertia page `Shared`, one `ServerCard` with
+  `share-token`, `Referrer-Policy: no-referrer` + `X-Robots-Tag: noindex`) and
+  `POST /s/{token}/start` (`throttle:server-start`, same `ServerStartController::launch()`).
+  Unknown/old token or a non-link server = 404. The slug start route 404s link-only servers
+  for everyone but admins. Guests with the link can't stop; a signed-in player who started
+  it can (the usual starter rule). Admin → Servers → Edit: copy + "New link"
+  (`POST /admin/servers/{slug}/share-link`).
 - Watchdog (#5283, `App\Servers\Watchdog`): `servers:watch` every minute (advance starting
   runs; give up on runs not online `MVM_BOOT_TIMEOUT_MINUTES` (20) after Start, VPS deleted,
   `failed`; ping online runs and stop one after the server's `idle_minutes` (default 15)

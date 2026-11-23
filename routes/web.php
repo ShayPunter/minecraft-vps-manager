@@ -11,6 +11,7 @@ use App\Http\Controllers\HomeController;
 use App\Http\Controllers\RunLogIntakeController;
 use App\Http\Controllers\ServerStartController;
 use App\Http\Controllers\ServerStopController;
+use App\Http\Controllers\SharedServerController;
 use App\Http\Controllers\VersionController;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use Illuminate\Support\Facades\Route;
@@ -35,6 +36,15 @@ Route::post('servers/{server}/start', ServerStartController::class)
     ->middleware('throttle:server-start')
     ->name('servers.start');
 
+// A link-only server's share page (#5462): anyone with the link, no account needed.
+Route::get('s/{token}', [SharedServerController::class, 'show'])
+    ->where('token', SharedServerController::TOKEN_PATTERN)
+    ->name('share.show');
+Route::post('s/{token}/start', [SharedServerController::class, 'start'])
+    ->where('token', SharedServerController::TOKEN_PATTERN)
+    ->middleware('throttle:server-start')
+    ->name('share.start');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     // Admins, or whoever started the run (the controller 404s everyone else).
@@ -49,6 +59,7 @@ Route::middleware(['auth', EnsureUserIsAdmin::class])
         Route::resource('users', UserController::class)->except(['show']);
         Route::resource('servers', ServerController::class)->except(['show']);
         Route::post('servers/{server}/stop', [ServerController::class, 'stop'])->name('servers.stop');
+        Route::post('servers/{server}/share-link', [ServerController::class, 'regenerateShareLink'])->name('servers.share-link');
         // Each run's log (#5367).
         Route::get('servers/{server}/log', [ServerLogController::class, 'show'])->name('servers.log');
         Route::get('servers/{server}/log/lines', [ServerLogController::class, 'lines'])->name('servers.log.lines');

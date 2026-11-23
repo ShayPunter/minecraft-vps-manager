@@ -2,6 +2,7 @@
 import { Form, Head, Link } from '@inertiajs/vue3';
 import ServerController from '@/actions/App/Http/Controllers/Admin/ServerController';
 import WorldArchiveController from '@/actions/App/Http/Controllers/Admin/WorldArchiveController';
+import CopyAddress from '@/components/CopyAddress.vue';
 import InputError from '@/components/InputError.vue';
 import ServerConfigFields from '@/components/admin/ServerConfigFields.vue';
 import ServerFields from '@/components/admin/ServerFields.vue';
@@ -116,6 +117,46 @@ defineOptions({
                 </Button>
             </div>
         </Form>
+
+        <section
+            v-if="props.server.share_url"
+            class="space-y-3 border-t pt-6"
+            data-test="share-section"
+        >
+            <Heading
+                variant="small"
+                title="Share link"
+                description="Anyone with this link can see and start this server, without an account. New link turns the old one off at once."
+            />
+            <p class="flex flex-wrap items-center gap-1 text-sm">
+                <code
+                    class="rounded bg-muted px-1 py-0.5 font-mono break-all"
+                    data-test="share-url"
+                    >{{ props.server.share_url }}</code
+                >
+                <CopyAddress
+                    :address="props.server.share_url"
+                    :server-name="props.server.name"
+                    :label="`Copy the share link of ${props.server.name}`"
+                />
+            </p>
+            <Form
+                v-bind="
+                    ServerController.regenerateShareLink.form(props.server.slug)
+                "
+                :options="{ preserveScroll: true }"
+                v-slot="{ processing }"
+            >
+                <Button
+                    type="submit"
+                    variant="outline"
+                    size="sm"
+                    :disabled="processing"
+                    data-test="new-share-link"
+                    >New link</Button
+                >
+            </Form>
+        </section>
 
         <section class="space-y-4 border-t pt-6" data-test="world-section">
             <Heading

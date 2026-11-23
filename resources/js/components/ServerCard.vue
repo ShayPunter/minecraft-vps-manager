@@ -5,11 +5,14 @@ import CopyAddress from '@/components/CopyAddress.vue';
 import IdleStopNote from '@/components/IdleStopNote.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import SharedServerController from '@/actions/App/Http/Controllers/SharedServerController';
 import { start, stop } from '@/routes/servers';
 import type { ServerSummary } from '@/types/servers';
 
 defineProps<{
     server: ServerSummary;
+    /** On a share page (#5462): Start goes through the link. */
+    shareToken?: string;
 }>();
 
 const busy = ['provisioning', 'booting', 'starting', 'stopping'];
@@ -99,7 +102,11 @@ const busy = ['provisioning', 'booting', 'starting', 'stopping'];
 
         <Form
             v-if="server.can_start"
-            v-bind="start.form(server.slug)"
+            v-bind="
+                shareToken
+                    ? SharedServerController.start.form(shareToken)
+                    : start.form(server.slug)
+            "
             :options="{ preserveScroll: true }"
             v-slot="{ processing }"
         >

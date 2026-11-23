@@ -5,6 +5,7 @@ namespace Tests\Feature\Servers;
 use App\Cloud\CloudProvider;
 use App\Cloud\FakeCloudProvider;
 use App\Enums\RunStatus;
+use App\Enums\Visibility;
 use App\Models\Server;
 use App\Models\User;
 use App\Servers\ServerCatalog;
@@ -34,7 +35,7 @@ class AdminServerTest extends TestCase
             'name' => 'All The Mods 9',
             'slug' => 'atm9',
             'description' => 'Modpack, 1.20.1',
-            'is_public' => '1',
+            'visibility' => 'public',
             'icon_url' => '',
             'server_type' => 'cx33',
             'location' => 'fsn1',
@@ -104,7 +105,7 @@ class AdminServerTest extends TestCase
 
         $server = Server::query()->sole();
         $this->assertSame('atm9', $server->slug);
-        $this->assertTrue($server->is_public);
+        $this->assertSame(Visibility::Public, $server->visibility);
         $this->assertNull($server->icon_url);
         $this->assertSame(17, $server->java_version);
         // Nothing exists at the provider until someone presses Start.
