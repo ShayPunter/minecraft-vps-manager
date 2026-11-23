@@ -361,10 +361,15 @@ output. Run with the real binary:
       Admin JSON for the form: `GET /admin/modrinth/search?q=`, `/admin/modrinth/projects/{id}/versions`
       (`ModrinthPicker.vue`). E2E: `modpack.spec` (`modpack-admin@example.com`).
       `PackLaunchScriptTest` runs the launch + memory steps with real sh. Checked for real (Nov 23)
-      in `ubuntu:24.04` with Java stubbed (scheduled runs can't run downloaded jars, #5456):
-      Vanilla Perfected 1.0.3 from the live API (112 files, all SHA-512s, Fabric 0.19.3) and Shay's
-      ATM10 ServerFiles-8.6.zip (468 mods, the NeoForge installer found, unix_args launch, the
-      8 GB warning); a `../` zip and a symlink zip refused. Not run: a real Minecraft start of either.
+      in `ubuntu:24.04` with Java stubbed: Vanilla Perfected 1.0.3 from the live API (112 files,
+      all SHA-512s, Fabric 0.19.3) and Shay's ATM10 ServerFiles-8.6.zip (468 mods, the NeoForge
+      installer found, unix_args launch, the 8 GB warning); a `../` zip and a symlink zip refused.
+      Then (Shay allowed real jars, #5456) in `eclipse-temurin:25-jre` + curl/unzip with real Java:
+      the same install ran the real Fabric installer and `sh mvm-launch.sh` as the minecraft user
+      reached "Done" (129 mods), Java was the process itself, SIGTERM saved and exited; ATM10's real
+      NeoForge 21.1.266 installer wrote `unix_args.txt`. `su` drops the image's
+      `/opt/java/openjdk/bin` from PATH: link java into /usr/bin (a real VPS has it there). ATM10
+      itself wasn't started (8 GB).
 - Server config (#5377, `App\Servers\ServerFiles` + `ServerConfigForm`): server.properties,
   whitelist.json, ops.json, run.sh and user_jvm_args.txt. `world_archives.files` (json) holds
   the world's own copies: `ServerFiles::fromZip()` on upload (top level or inside a single
