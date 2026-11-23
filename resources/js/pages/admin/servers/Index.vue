@@ -2,6 +2,7 @@
 import { Form, Head, Link, usePoll } from '@inertiajs/vue3';
 import ServerController from '@/actions/App/Http/Controllers/Admin/ServerController';
 import ServerLogController from '@/actions/App/Http/Controllers/Admin/ServerLogController';
+import CopyAddress from '@/components/CopyAddress.vue';
 import Heading from '@/components/Heading.vue';
 import IdleStopNote from '@/components/IdleStopNote.vue';
 import { Badge } from '@/components/ui/badge';
@@ -99,6 +100,12 @@ usePoll(5000, { only: ['servers'] });
                                 class="ml-2 font-mono text-xs"
                                 >{{ server.address }}</span
                             >
+                            <CopyAddress
+                                v-if="server.address"
+                                :address="server.address"
+                                :server-name="server.name"
+                                class="ml-1"
+                            />
                             <p
                                 v-if="server.status === 'online'"
                                 class="mt-1 text-xs text-muted-foreground"

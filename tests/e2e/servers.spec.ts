@@ -115,6 +115,35 @@ test('an admin adds a server, a player starts it and sees it come online', async
     await expect(card.locator('[data-test="server-address"]')).toContainText(
         /203\.0\.113\.\d+/,
     );
+    // Copy copies exactly the address shown (#5450). The clipboard is recorded in the page,
+    // not the OS one (shared with other specs and Shay's desktop).
+    await player.evaluate(() => {
+        const w = window as unknown as { copied: string[] };
+        w.copied = [];
+        navigator.clipboard.writeText = async (text: string) => {
+            w.copied.push(text);
+        };
+    });
+    const copyButton = card.getByRole('button', {
+        name: 'Copy the address of Friends Modpack',
+    });
+    await copyButton.click();
+    await expect(copyButton).toContainText('Copied');
+    const shown = await card
+        .locator('[data-test="server-address"] code')
+        .textContent();
+    expect(
+        await player.evaluate(
+            () => (window as unknown as { copied: string[] }).copied,
+        ),
+    ).toEqual([shown?.trim()]);
+    await player.evaluate(() => {
+        navigator.clipboard.writeText = async () => {
+            throw new Error('Denied');
+        };
+    });
+    await copyButton.click();
+    await expect(copyButton).toContainText("Couldn't copy");
     await expect(
         card.getByRole('button', { name: 'Start Friends Modpack' }),
     ).toHaveCount(0);
