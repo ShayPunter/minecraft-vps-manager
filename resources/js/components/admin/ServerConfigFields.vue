@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import InputError from '@/components/InputError.vue';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -78,6 +78,25 @@ const whitelist = ref(props.config.whitelist);
 const ops = ref(props.config.ops);
 const runSh = ref(props.config.run_sh);
 const userJvmArgs = ref(props.config.user_jvm_args);
+
+// Minecraft only checks whitelist.json while white-list is true (#5402): an empty choice
+// means the world's value, or Minecraft's default (false) when the world has none. A world
+// saved before #5377 has no known files, so its value is unknown until its next stop.
+const whitelistIgnored = computed((): 'off' | 'unknown' | null => {
+    if (whitelist.value.trim() === '') {
+        return null;
+    }
+
+    const chosen = values['white-list'] || props.config.world['white-list'];
+
+    if (chosen) {
+        return chosen === 'true' ? null : 'off';
+    }
+
+    return props.config.has_world && !props.config.has_world_files
+        ? 'unknown'
+        : 'off';
+});
 </script>
 
 <template>
@@ -197,6 +216,21 @@ const userJvmArgs = ref(props.config.user_jvm_args);
             <p class="text-sm text-muted-foreground">
                 One Minecraft account per line. Only these can join while the
                 whitelist is on.
+            </p>
+            <p
+                v-if="whitelistIgnored"
+                class="text-sm text-amber-700 dark:text-amber-400"
+                data-test="whitelist-off-warning"
+            >
+                <template v-if="whitelistIgnored === 'off'"
+                    >Whitelist is off, so anyone can join and Minecraft doesn't
+                    check this list.</template
+                >
+                <template v-else
+                    >The saved world's Whitelist setting isn't known yet, and
+                    Minecraft only checks this list while it's on.</template
+                >
+                Set Whitelist to On above to only let these players in.
             </p>
             <InputError :message="errors.whitelist_players" />
         </div>

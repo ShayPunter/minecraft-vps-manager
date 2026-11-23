@@ -297,6 +297,19 @@ class ServerFiles
                     echo "Wrote $name from the app."
                 fi
             done
+            # Minecraft only checks whitelist.json while white-list is true (#5402): say which.
+            if [ -f "$DIR/whitelist.json" ]; then
+                n=$(grep -c '"uuid"' "$DIR/whitelist.json" || true)
+                if [ "${n:-0}" != 0 ]; then
+                    who="$n players"
+                    if [ "$n" = 1 ]; then who="1 player"; fi
+                    if grep -Eq '^[[:space:]]*white-list[[:space:]]*[=:][[:space:]]*true[[:space:]]*$' "$DIR/server.properties" 2>/dev/null; then
+                        echo "Whitelist on: $who in whitelist.json."
+                    else
+                        echo "whitelist.json has $who, but white-list isn't true in server.properties: anyone can join."
+                    fi
+                fi
+            fi
 
             SH;
     }
