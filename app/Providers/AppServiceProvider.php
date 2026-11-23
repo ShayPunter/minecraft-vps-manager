@@ -123,9 +123,14 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('server-start', fn (Request $request): Limit => Limit::perMinute(5)
             ->by($request->user()?->id !== null ? 'user:'.$request->user()->id : 'ip:'.$request->ip()));
 
-        // A run's log shipper posts about every 5 seconds (#5367).
-        RateLimiter::for('run-log', fn (Request $request): Limit => Limit::perMinute(60)
-            ->by('run:'.(string) $request->route('run')));
+        // A run's log shipper posts about every 5 seconds (#5367). Counted per run **and**
+        // IP (#5527): the limiter runs before the token check, so a run-only key let anyone
+        // fill the bucket and the real shipper got 429s. The per-IP cap bounds one caller
+        // across every run id.
+        RateLimiter::for('run-log', fn (Request $request): array => [
+            Limit::perMinute(60)->by('run:'.(string) $request->route('run').'|ip:'.$request->ip()),
+            Limit::perMinute(300)->by('run-log-ip:'.$request->ip()),
+        ]);
     }
 
     /**

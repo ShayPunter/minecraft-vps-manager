@@ -11,8 +11,9 @@ use Throwable;
 /**
  * SSH as root with the run's own private key (#5324; Hetzner put its public half on the VPS).
  * A run started before #5324 has none and falls back to the old key file, if it's still there.
- * The host key isn't checked: every VPS is new, made by this app a few minutes earlier, and
- * Hetzner doesn't report its host key, so there's nothing to compare with.
+ * The host key is pinned (#5527): the app makes the VPS's ed25519 host key itself, cloud-init
+ * installs it, and every login checks the VPS proves it holds that key before sending ours.
+ * Runs from before #5527 have no pinned key and aren't checked.
  */
 class SshRemoteShell implements RemoteShell
 {
@@ -22,14 +23,16 @@ class SshRemoteShell implements RemoteShell
     public function __construct(
         private readonly string $legacyPrivateKeyPath,
         private readonly string $user = 'root',
+        private readonly int $port = 22,
     ) {}
 
-    public function run(string $host, string $command, int $timeoutSeconds, ?string $privateKey = null): ShellResult
+    public function run(string $host, string $command, int $timeoutSeconds, ?string $privateKey = null, ?string $hostKey = null): ShellResult
     {
         $key = $this->loadKey($privateKey);
 
         try {
-            $ssh = new SSH2($host, 22, 10);
+            $ssh = new SSH2($host, $this->port, 10);
+            self::checkHostKey($ssh, $host, $hostKey);
 
             if (! $ssh->login($this->user, $key)) {
                 throw new RemoteShellException("SSH login to {$host} was refused.");
@@ -53,12 +56,13 @@ class SshRemoteShell implements RemoteShell
         return new ShellResult(is_int($exitCode) ? $exitCode : 255, is_string($output) ? $output : '');
     }
 
-    public function putFiles(string $host, array $files, ?string $privateKey = null): void
+    public function putFiles(string $host, array $files, ?string $privateKey = null, ?string $hostKey = null): void
     {
         $key = $this->loadKey($privateKey);
 
         try {
-            $sftp = new SFTP($host, 22, 10);
+            $sftp = new SFTP($host, $this->port, 10);
+            self::checkHostKey($sftp, $host, $hostKey);
 
             if (! $sftp->login($this->user, $key)) {
                 throw new RemoteShellException("SFTP login to {$host} was refused.");
@@ -85,6 +89,41 @@ class SshRemoteShell implements RemoteShell
             throw $e;
         } catch (Throwable $e) {
             throw new RemoteShellException("SFTP to {$host} failed: {$e->getMessage()}");
+        }
+    }
+
+    /**
+     * `ssh-ed25519 AAAA…` without the comment: what a run keeps and what a login compares.
+     */
+    public static function keyBlob(string $publicKey): string
+    {
+        $parts = preg_split('/\s+/', trim($publicKey));
+
+        if ($parts === false || count($parts) < 2 || base64_decode($parts[1], true) === false) {
+            throw new RemoteShellException("That isn't an OpenSSH public key.");
+        }
+
+        return $parts[0].' '.$parts[1];
+    }
+
+    /**
+     * Before anything of ours is sent: only an ed25519 host key is offered, and it must be the
+     * one made for this VPS. phpseclib checks the VPS signed the key exchange with it.
+     */
+    private static function checkHostKey(SSH2 $ssh, string $host, ?string $hostKey): void
+    {
+        if ($hostKey === null) {
+            return;
+        }
+
+        $expected = self::keyBlob($hostKey);
+        $ssh->setPreferredAlgorithms(['hostkey' => [explode(' ', $expected)[0]]]);
+        $shown = $ssh->getServerPublicHostKey();
+
+        if (! is_string($shown) || self::keyBlob($shown) !== $expected) {
+            $ssh->disconnect();
+
+            throw new RemoteShellException("{$host} didn't show the SSH host key made for this VPS: not logging in.");
         }
     }
 

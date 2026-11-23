@@ -56,10 +56,17 @@ class ServerStopController extends Controller
             RunStatus::Stopped => ['type' => 'success', 'message' => $force
                 ? "Deleted the VPS of {$server->name} without saving the world."
                 : "Stopped {$server->name}. The world is saved and the VPS is deleted."],
-            RunStatus::StopFailed => ['type' => 'error', 'message' => "{$server->name} couldn't be stopped. {$run->error}"],
+            RunStatus::StopFailed => ['type' => 'error', 'message' => "{$server->name} couldn't be stopped. ".ServerPresenter::errorFor($run->error, self::viewer())],
             default => ['type' => 'success', 'message' => "Stopping {$server->name}. The world is saved first, then the VPS is deleted."],
         });
 
         return back();
+    }
+
+    private static function viewer(): ?User
+    {
+        $user = auth()->user();
+
+        return $user instanceof User ? $user : null;
     }
 }

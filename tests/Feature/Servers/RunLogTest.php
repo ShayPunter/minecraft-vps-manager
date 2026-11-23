@@ -155,6 +155,33 @@ class RunLogTest extends TestCase
         $this->assertSame(1, ServerRunLog::query()->count(), 'Only prepare.sh\'s line.');
     }
 
+    public function test_someone_else_filling_the_limit_doesnt_stop_the_real_shipper(): void
+    {
+        $run = $this->startAndBoot();
+        $token = $this->token();
+        $outsider = ['REMOTE_ADDR' => '203.0.113.9'];
+        $vps = ['REMOTE_ADDR' => '198.51.100.7'];
+
+        foreach (range(1, 60) as $i) {
+            $this->ship($run, "x\n", 'guess-'.$i, $outsider)->assertNotFound();
+        }
+        $this->ship($run, "x\n", 'guess-61', $outsider)->assertStatus(429);
+
+        // The shipper on the VPS has its own count (#5527).
+        $this->ship($run, "still here\n", $token, $vps)->assertNoContent();
+        $this->assertSame('still here', ServerRunLog::query()->latest('id')->value('line'));
+    }
+
+    public function test_one_caller_is_capped_across_every_run_id(): void
+    {
+        $outsider = ['REMOTE_ADDR' => '203.0.113.10'];
+
+        foreach (range(1, 300) as $i) {
+            $this->call('POST', "/runs/{$i}/log", [], [], [], $outsider, "x\n")->assertNotFound();
+        }
+        $this->call('POST', '/runs/301/log', [], [], [], $outsider, "x\n")->assertStatus(429);
+    }
+
     public function test_an_ended_run_tells_the_shipper_to_stop(): void
     {
         $run = $this->startAndBoot();
