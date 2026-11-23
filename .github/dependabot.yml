@@ -34,3 +34,7 @@ updates:
       # vite is aliased to Vite+'s core and moves with vite-plus; bump them together by hand.
       - dependency-name: "vite"
       - dependency-name: "vite-plus"
+      # TypeScript 7 (the native compiler) has no JS compiler API, so vue-tsc can't run on it
+      # (#5432). Stay on 6.x, the last JS release.
+      - dependency-name: "typescript"
+        versions: [">=7"]
