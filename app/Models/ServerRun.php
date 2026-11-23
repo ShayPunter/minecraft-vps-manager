@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $active_server_id equal to server_id while active, null once ended
  * @property int|null $started_by
  * @property string|null $started_from_ip
+ * @property bool $started_by_join the waker started it: someone joined a Wake on join server (#5818)
  * @property RunStatus $status
  * @property int|null $provider_server_id
  * @property string|null $ipv4
@@ -113,6 +114,7 @@ class ServerRun extends Model
     {
         return [
             'status' => RunStatus::class,
+            'started_by_join' => 'boolean',
             'checked_at' => 'datetime',
             'online_at' => 'datetime',
             'ended_at' => 'datetime',

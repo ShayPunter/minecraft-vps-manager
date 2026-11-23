@@ -20,8 +20,9 @@ use Throwable;
  * it."), its icon, and the state ("Asleep", "Starting") where the player count usually is:
  * the version name is shown, in red, whenever its protocol isn't the client's, so it gets -1.
  *
- * Joining starts a stopped server that wakes on join as a guest start (ServerLauncher with no
- * user), so the guest limits apply: the daily budget, the free slot and the cap.
+ * Joining starts a stopped server that wakes on join. The admin turned that on for the server,
+ * so the guest rules (daily budget, free slot) don't apply (#5818); the cap and this class's
+ * per-IP limit do.
  */
 class WakerReplies implements Replies
 {
@@ -91,7 +92,7 @@ class WakerReplies implements Replies
         }
 
         try {
-            $this->launcher->start($server, null, $ip);
+            $this->launcher->start($server, null, $ip, byJoin: true);
         } catch (StartRefused $e) {
             return "{$server->name} can't start: {$e->getMessage()}";
         } catch (Throwable $e) {
