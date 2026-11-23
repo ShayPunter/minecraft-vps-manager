@@ -214,8 +214,9 @@ test('a link-only server opens and starts only through its share link', async ({
     page,
     browser,
 }) => {
-    // #5462. Not "Name"/"Slug" in the server's name: other specs' label lookups.
-    await logIn(page, 'admin@example.com');
+    // #5462. Not "Name"/"Slug" in the server's name: other specs' label lookups. Its own
+    // admin: the other tests sign admin@example.com in within the same minute (Fortify: 5).
+    await logIn(page, 'share-admin@example.com');
     await ensureWorldStorage(page);
     await createServer(page, 'Community Realm', 'community-realm', 'link');
     await expect(

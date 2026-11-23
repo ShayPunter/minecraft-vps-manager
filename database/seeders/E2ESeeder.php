@@ -74,5 +74,13 @@ class E2ESeeder extends Seeder
             'email' => 'config-admin@example.com',
             'created_at' => now()->subYear(),
         ]);
+
+        // servers.spec's link-only test (#5462): a fifth admin@example.com login in a
+        // minute trips Fortify's limit on a fast runner, so it has its own admin.
+        User::factory()->admin()->create([
+            'name' => 'Sam Share',
+            'email' => 'share-admin@example.com',
+            'created_at' => now()->subYear(),
+        ]);
     }
 }
