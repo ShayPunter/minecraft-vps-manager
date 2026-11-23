@@ -494,13 +494,16 @@ a real paste would use the machine's clipboard.
   for a day, failures for an hour; needs GD: local PHP here lacks it, load it with
   `-d extension=<php dir>/ext/php_gd.dll` and run `vendor/bin/phpunit` directly, since
   `artisan test` drops `-d`; CI installs gd). Join = `ServerLauncher::start($server,
-  null, $ip)` (guest limits), `waker-start:<ip>` limiter 5/min, logs "Server started by a
+  null, $ip, byJoin: true)`: **no guest rules** (Shay, #5818: a join was refused with "the last
+  free slot is kept for signed-in players"), the cap still applies; the run gets
+  `server_runs.started_by_join`, which `GuestStarts::usedToday()` leaves out, so joins don't
+  use up the website's guest budget either. `waker-start:<ip>` limiter 5/min, logs "Server started by a
   join" with the unverified player name; no Mojang check (whitelists aren't consulted).
   `WakerLoopTest` runs it over real sockets on 127.0.0.1. Checked for real (Nov 23)
   with PrismarineJS `minecraft-protocol` 1.68 clients (1.21.4, 1.20.1, 1.8.9) against
   `servers:waker` on a throwaway SQLite database: ping (name, line, icon), join started
   it, next ping "Starting", join again "starting", the fourth guest start of the day
-  refused. Its `ping()` puts `host` in the handshake (no `fakeHost`): pass a `connect`
+  refused (before #5818 took joins out of the guest rules). Its `ping()` puts `host` in the handshake (no `fakeHost`): pass a `connect`
   hook that dials 127.0.0.1. Not tried with the real game or real Cloudflare.
 - `App\Cloud` (#5281): `CloudProvider` interface (create/find/delete server, managed
   servers, create/delete/list managed SSH keys, server types, locations), `HetznerCloud`

@@ -612,8 +612,8 @@ const currentTypeRetired = computed(
         <p class="text-sm text-muted-foreground" data-test="wake-on-join-hint">
             While it's stopped, its name points at the waker: the Minecraft
             server list shows it as asleep, and joining starts it. Anyone who
-            knows the name can start it this way: it counts as a guest start, so
-            the guest limits apply.
+            knows the name can start it this way. The guest limits don't apply
+            to joins; the limit on servers running at once does.
             <template v-if="!wakerAddress"
                 ><strong
                     >Set the waker address in Admin → DNS first, or nothing

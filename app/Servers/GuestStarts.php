@@ -28,13 +28,14 @@ class GuestStarts
 
     /**
      * Guest starts of this server since midnight (UTC), failed ones included: a VPS
-     * that was created still cost money.
+     * that was created still cost money. Starts by a join (#5818) aren't guest starts.
      */
     public static function usedToday(Server $server): int
     {
         return ServerRun::query()
             ->where('server_id', $server->id)
             ->whereNull('started_by')
+            ->where('started_by_join', false)
             ->where('created_at', '>=', now()->startOfDay())
             ->count();
     }

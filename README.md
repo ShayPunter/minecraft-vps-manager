@@ -86,7 +86,8 @@ one before the VPS is deleted. Servers can't start until world storage is set up
 9. **Wake on join (optional, needs DNS)**: a stopped server starts when someone joins its
    name. While such a server is stopped, its name points at the waker instead of being
    deleted. In the Minecraft server list it shows its name, "Asleep. Join to start it" and
-   its icon; joining starts it (a guest start: the guest limits above apply) and tells the
+   its icon; joining starts it (the guest limits above don't apply to joins, the
+   `MVM_MAX_RUNNING` cap does) and tells the
    player to join again once it's up. Pings never start anything. Once the VPS has its IP
    the name moves to it as usual, and back to the waker when it stops. To set it up, add a
    Forge daemon (server → Daemons): command `php artisan servers:waker`, directory the

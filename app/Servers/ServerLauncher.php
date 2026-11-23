@@ -62,9 +62,12 @@ class ServerLauncher
     ) {}
 
     /**
+     * $byJoin: a player joined the name of a server with Wake on join (the waker, #5818). The
+     * admin turned that on for this server, so the guest rules don't apply; the cap does.
+     *
      * @throws StartRefused
      */
-    public function start(Server $server, ?User $user, ?string $ip): ServerRun
+    public function start(Server $server, ?User $user, ?string $ip, bool $byJoin = false): ServerRun
     {
         // Without world storage a stop couldn't save the world (#5288): don't start at all.
         try {
@@ -76,7 +79,7 @@ class ServerLauncher
         }
 
         try {
-            $run = Cache::lock('mvm:start', 15)->block(5, fn (): ServerRun => DB::transaction(function () use ($server, $user, $ip): ServerRun {
+            $run = Cache::lock('mvm:start', 15)->block(5, fn (): ServerRun => DB::transaction(function () use ($server, $user, $ip, $byJoin): ServerRun {
                 if ($server->activeRun()->exists()) {
                     throw StartRefused::alreadyRunning($server->name);
                 }
@@ -90,7 +93,8 @@ class ServerLauncher
                 }
 
                 // Guests (public card, share link) have their own budget and leave a slot free (#5526).
-                if ($user === null) {
+                // A join on a Wake on join server doesn't (#5818).
+                if ($user === null && ! $byJoin) {
                     GuestStarts::check($server, $active, $cap);
                 }
 
@@ -99,6 +103,7 @@ class ServerLauncher
                 $run->active_server_id = $server->id;
                 $run->started_by = $user?->id;
                 $run->started_from_ip = $ip;
+                $run->started_by_join = $byJoin;
                 $run->status = RunStatus::Provisioning;
                 $run->save();
 

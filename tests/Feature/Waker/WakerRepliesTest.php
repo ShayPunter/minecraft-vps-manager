@@ -7,6 +7,7 @@ use App\Models\DnsSetting;
 use App\Models\Server;
 use App\Models\ServerRun;
 use App\Models\User;
+use App\Servers\GuestStarts;
 use App\Waker\Favicons;
 use App\Waker\WakerReplies;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -151,7 +152,7 @@ class WakerRepliesTest extends TestCase
         $this->assertSame(0, ServerRun::query()->count());
     }
 
-    public function test_a_join_starts_it_as_a_guest_start(): void
+    public function test_a_join_starts_it(): void
     {
         $server = $this->server();
         $this->pastRun($server, 240);
@@ -162,7 +163,10 @@ class WakerRepliesTest extends TestCase
         $this->assertSame("Starting ATM9 for you! It's usually ready in about 4 min: join again then.", $message);
         $run = $server->activeRun()->sole();
         $this->assertNull($run->started_by);
+        $this->assertTrue($run->started_by_join);
         $this->assertSame(self::IP, $run->started_from_ip);
+        // Not a guest start: the website's guest budget is untouched (#5818).
+        $this->assertSame(0, GuestStarts::usedToday($server));
         Log::shouldHaveReceived('info')->withArgs(fn (string $m, array $c = []): bool => $m === 'Server started by a join'
             && $c === ['server' => 'atm9', 'player' => 'Steve', 'ip' => self::IP]);
 
@@ -171,22 +175,27 @@ class WakerRepliesTest extends TestCase
         $this->assertSame(2, ServerRun::query()->count());
     }
 
-    public function test_the_guest_limits_apply(): void
+    public function test_the_guest_rules_dont_apply_to_a_join_but_the_cap_does(): void
     {
-        config(['minecraft.guest_starts_per_day' => 0]);
-        $this->server();
+        // Guests can't start anything from the website, and one of the two slots is taken:
+        // a guest would get "the last free slot is kept for signed-in players" (#5818).
+        config(['minecraft.guest_starts_per_day' => 0, 'minecraft.max_running' => 2, 'minecraft.guest_free_slots' => 1]);
+        $other = Server::factory()->create(['name' => 'Other', 'slug' => 'other']);
+        $this->activeRun($other, RunStatus::Online);
+        $server = $this->server();
 
-        $this->assertSame("ATM9 can't start: Sign in to start ATM9: guests can't start servers.", $this->replies()->join('atm9.example.com', 'Steve', self::IP));
+        $this->assertSame('Starting ATM9 for you! Join again in a few minutes.', $this->replies()->join('atm9.example.com', 'Steve', self::IP));
+        $this->assertTrue($server->activeRun()->exists());
 
-        config(['minecraft.guest_starts_per_day' => 3, 'minecraft.max_running' => 1, 'minecraft.guest_free_slots' => 1]);
-        $this->assertStringStartsWith("ATM9 can't start: Sign in to start ATM9 now: the last free server slot", $this->replies()->join('atm9.example.com', 'Steve', '198.51.100.9'));
-
-        $this->assertSame(0, ServerRun::query()->count());
+        // The cap still holds.
+        $third = Server::factory()->create(['name' => 'Third', 'slug' => 'third', 'subdomain' => 'third', 'wake_on_join' => true]);
+        $this->assertSame("Third can't start: 2 servers are already running, the most allowed at once. Try again when one has stopped.", $this->replies()->join('third.example.com', 'Steve', '198.51.100.9'));
+        $this->assertFalse($third->activeRun()->exists());
     }
 
     public function test_joins_from_one_address_are_limited(): void
     {
-        config(['minecraft.guest_starts_per_day' => 0]);
+        config(['minecraft.max_running' => 0]);
         $this->server();
 
         for ($i = 0; $i < WakerReplies::STARTS_PER_MINUTE; $i++) {
