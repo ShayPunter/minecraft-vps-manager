@@ -67,6 +67,22 @@ test('an admin edits a pack server.properties, whitelist and user_jvm_args.txt',
         "The pack's own run.sh: nothing is written.",
     );
 
+    // A list with Whitelist off does nothing in Minecraft (#5402): the form says so.
+    const whitelistWarning = page.locator(
+        '[data-test="whitelist-off-warning"]',
+    );
+    await expect(whitelistWarning).toBeHidden();
+    await page.getByLabel('Whitelisted players').fill('Steve');
+    await expect(whitelistWarning).toContainText(
+        'Whitelist is off, so anyone can join',
+    );
+    await page.getByLabel('Whitelist', { exact: true }).selectOption('true');
+    await expect(whitelistWarning).toBeHidden();
+    await page.getByLabel('Whitelist', { exact: true }).selectOption('');
+    await expect(whitelistWarning).toBeVisible();
+    await page.getByLabel('Whitelisted players').fill('');
+    await expect(whitelistWarning).toBeHidden();
+
     // The whitelist can't go on with nobody on it.
     await page.getByLabel('MOTD').fill('Friends only');
     await page.getByLabel('Whitelist', { exact: true }).selectOption('true');

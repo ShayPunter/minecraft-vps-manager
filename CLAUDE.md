@@ -341,6 +341,11 @@ output. Run with the real binary:
   MOTD, whitelist (real Mojang UUIDs), ops level and seed from the app and kept them; the awk
   merge on a file with comments and `key = value` spacing; save.sh's report read back.
   E2E: `server-config.spec` (`config-admin@example.com`); the zip helper is `tests/e2e/zip.ts`.
+  Minecraft only checks whitelist.json while `white-list=true` (fresh installs and most packs
+  ship it false), so a whitelist saved with Whitelist left off lets everyone in (#5402: "it
+  didn't apply"). The form warns while typing, and prepare.sh logs "Whitelist on: N players"
+  or "… white-list isn't true …: anyone can join". `ServerFilesApplyScriptTest` runs the
+  apply step with real `sh` in a temp folder (Git Bash's sh locally).
 - DNS names (#5338, `App\Dns`): Admin → DNS (`DnsController`, `DnsSetting`, one row: domain,
   Cloudflare zone id, `api_token` encrypted + `$hidden`). Only `/zones/{id}/dns_records` is
   called, so an "Edit zone DNS" token for one zone is enough (no Zone Read for `/zones`).
