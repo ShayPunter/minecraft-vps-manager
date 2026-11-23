@@ -76,9 +76,15 @@ a real paste would use the machine's clipboard.
   Every status change goes through `App\Servers\ServerLauncher` (provisioning → booting →
   starting → online; stopping → stopped; failed): `start()` takes a cache lock, checks the
   cap (`config('minecraft.max_running')`, `MVM_MAX_RUNNING`, default 2) and queues
-  `ProvisionServerRun` (one try: a retry could make a second VPS). `advanceActive()` runs on
-  dashboard/home page views (throttled by `MVM_CHECK_INTERVAL`, 10 s; E2E sets 0) and every
-  minute via the scheduled `servers:advance`. "Online" = Minecraft's port takes a TCP
+  `ProvisionServerRun` (one try: a retry could make a second VPS). `advanceActive()` runs in
+  the queued `AdvanceActiveRuns` job (unique, one try), which home/dashboard/share page views
+  queue through `advanceSoon()` when a booting/starting run is due (`MVM_CHECK_INTERVAL`,
+  10 s; E2E sets 0), and every minute in `servers:watch` (`force`). Page requests never call
+  Hetzner, Cloudflare, the probe or SSH themselves (#5752); the next poll shows the result.
+  Each run is checked under a `mvm:advance:<run>` cache lock, re-read, and (without `force`)
+  claimed by an UPDATE of `checked_at` that only matches while it's due, so two workers make
+  one set of provider calls (`AdvanceOffRequestTest`). Tests and E2E use the sync queue, so
+  there a page view still advances inline. "Online" = Minecraft's port takes a TCP
   connection (`MinecraftProbe`; `FakeMinecraftProbe` in testing/e2e, `refuse()` in tests).
   In E2E the fake VPS boots on its first check (`FakeCloudProvider` `autoBoot`).
 - `App\Servers\CloudInit`: user data as `#cloud-config` + JSON (valid YAML), files base64,
