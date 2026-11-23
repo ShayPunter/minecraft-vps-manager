@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -19,6 +20,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // Cloudflare's ranges are in config/trustedproxy.php (#5703): $request->ip() is the
         // visitor (or a VPS's log shipper), not a Cloudflare edge, for every per-IP limit.
         $middleware->trustProxies(headers: Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_PROTO);
+
+        // HSTS, frame-ancestors, nosniff, Referrer-Policy, Permissions-Policy (#5533).
+        $middleware->append(SecurityHeaders::class);
 
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
