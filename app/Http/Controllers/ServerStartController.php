@@ -6,6 +6,7 @@ use App\Enums\Visibility;
 use App\Models\Server;
 use App\Models\User;
 use App\Servers\ServerLauncher;
+use App\Servers\ServerPresenter;
 use App\Servers\StartRefused;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -54,7 +55,7 @@ class ServerStartController extends Controller
         }
 
         $server->load('latestRun');
-        $failed = $server->latestRun?->error;
+        $failed = ServerPresenter::errorFor($server->latestRun?->error, $user);
 
         Inertia::flash('toast', $failed !== null
             ? ['type' => 'error', 'message' => "{$server->name} couldn't start. {$failed}"]

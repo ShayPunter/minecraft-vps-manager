@@ -25,13 +25,14 @@ class FakeRemoteShell implements RemoteShell
 
     public function __construct(private readonly Repository $cache) {}
 
-    public function run(string $host, string $command, int $timeoutSeconds, ?string $privateKey = null): ShellResult
+    public function run(string $host, string $command, int $timeoutSeconds, ?string $privateKey = null, ?string $hostKey = null): ShellResult
     {
         $state = $this->state();
         $state['commands'][] = ['host' => $host, 'command' => $command];
         // Which key logged in (so a test can check it was the run's), kept apart from
         // `commands` so the existing assertions on host + command stay as they were.
         $state['keys'][] = $privateKey;
+        $state['host_keys'][] = $hostKey;
         $this->cache->forever(self::KEY, $state);
 
         if ($state['unreachable'] !== null) {
@@ -59,7 +60,7 @@ class FakeRemoteShell implements RemoteShell
         return new ShellResult(0, "result=success\n");
     }
 
-    public function putFiles(string $host, array $files, ?string $privateKey = null): void
+    public function putFiles(string $host, array $files, ?string $privateKey = null, ?string $hostKey = null): void
     {
         $state = $this->state();
 
@@ -108,7 +109,7 @@ class FakeRemoteShell implements RemoteShell
      */
     public function forget(): void
     {
-        $this->cache->forever(self::KEY, [...$this->state(), 'commands' => [], 'keys' => [], 'files' => []]);
+        $this->cache->forever(self::KEY, [...$this->state(), 'commands' => [], 'keys' => [], 'host_keys' => [], 'files' => []]);
     }
 
     public function succeed(): void
@@ -132,6 +133,16 @@ class FakeRemoteShell implements RemoteShell
     public function keys(): array
     {
         return $this->state()['keys'];
+    }
+
+    /**
+     * The host key each command was pinned to (#5527), in the same order as commands().
+     *
+     * @return list<string|null>
+     */
+    public function hostKeys(): array
+    {
+        return $this->state()['host_keys'];
     }
 
     /**
@@ -171,14 +182,14 @@ class FakeRemoteShell implements RemoteShell
     }
 
     /**
-     * @return array{commands: list<array{host: string, command: string}>, keys: list<string|null>, files: list<array{host: string, path: string, contents: string, mode: int}>, exit: int, output: string, unreachable: string|null, fail_matching: list<array{0: string, 1: int, 2: string}>, empty_world: bool}
+     * @return array{commands: list<array{host: string, command: string}>, keys: list<string|null>, host_keys: list<string|null>, files: list<array{host: string, path: string, contents: string, mode: int}>, exit: int, output: string, unreachable: string|null, fail_matching: list<array{0: string, 1: int, 2: string}>, empty_world: bool}
      */
     private function state(): array
     {
         $state = $this->cache->get(self::KEY);
-        $default = ['commands' => [], 'keys' => [], 'files' => [], 'exit' => 0, 'output' => '', 'unreachable' => null, 'fail_matching' => [], 'empty_world' => false];
+        $default = ['commands' => [], 'keys' => [], 'host_keys' => [], 'files' => [], 'exit' => 0, 'output' => '', 'unreachable' => null, 'fail_matching' => [], 'empty_world' => false];
 
-        /** @var array{commands: list<array{host: string, command: string}>, keys: list<string|null>, files: list<array{host: string, path: string, contents: string, mode: int}>, exit: int, output: string, unreachable: string|null, fail_matching: list<array{0: string, 1: int, 2: string}>, empty_world: bool} */
+        /** @var array{commands: list<array{host: string, command: string}>, keys: list<string|null>, host_keys: list<string|null>, files: list<array{host: string, path: string, contents: string, mode: int}>, exit: int, output: string, unreachable: string|null, fail_matching: list<array{0: string, 1: int, 2: string}>, empty_world: bool} */
         return is_array($state) ? [...$default, ...$state] : $default;
     }
 }

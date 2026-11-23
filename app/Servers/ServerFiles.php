@@ -272,7 +272,9 @@ class ServerFiles
         return <<<'SH'
             # The admin's changes from the app (#5377), over the world's own files.
             F="$M/files"
+            # Each file is removed before it's written, so root never writes through a link (#5527).
             if [ -f "$F/server.properties" ]; then
+                if [ -L "$DIR/server.properties" ]; then rm -f "$DIR/server.properties"; fi
                 touch "$DIR/server.properties"
                 awk 'NR == FNR {
                         i = index($0, "="); if (i < 2) next
@@ -288,11 +290,13 @@ class ServerFiles
                     }
                     END { for (j = 1; j <= n; j++) if (!(order[j] in done)) print order[j] "=" v[order[j]] }' \
                     "$F/server.properties" "$DIR/server.properties" > "$M/work/server.properties"
+                rm -f "$DIR/server.properties"
                 cat "$M/work/server.properties" > "$DIR/server.properties"
                 echo "Applied server.properties changes from the app."
             fi
             for name in whitelist.json ops.json run.sh user_jvm_args.txt; do
                 if [ -f "$F/$name" ]; then
+                    rm -f "$DIR/$name"
                     cat "$F/$name" > "$DIR/$name"
                     echo "Wrote $name from the app."
                 fi

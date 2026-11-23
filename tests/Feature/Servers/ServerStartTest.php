@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Servers\FakeMinecraftProbe;
 use App\Servers\MinecraftProbe;
 use App\Servers\ServerLauncher;
+use App\Servers\ServerPresenter;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -225,7 +226,8 @@ class ServerStartTest extends TestCase
         $server = Server::factory()->create(['name' => 'Vanilla', 'slug' => 'vanilla']);
 
         $this->actingAs($player)->post('/servers/vanilla/start')
-            ->assertInertiaFlash('toast.type', 'error');
+            ->assertInertiaFlash('toast.type', 'error')
+            ->assertInertiaFlash('toast.message', "Vanilla couldn't start. ".ServerPresenter::PUBLIC_ERROR);
 
         $run = ServerRun::query()->sole();
         $this->assertSame(RunStatus::Failed, $run->status);
@@ -233,13 +235,41 @@ class ServerStartTest extends TestCase
         $this->assertStringContainsString('server limit reached', (string) $run->error);
         $this->assertFalse($server->activeRun()->exists());
 
+        // The provider's message is for admins (#5527); a player gets the label and a plain line.
         $this->actingAs($player)->get('/dashboard')
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->where('servers.0.status', 'stopped')
                 ->where('servers.0.can_start', true)
+                ->where('servers.0.error_label', 'Last start failed')
+                ->where('servers.0.error', ServerPresenter::PUBLIC_ERROR));
+
+        $this->actingAs(User::factory()->admin()->create())->get('/dashboard')
+            ->assertInertia(fn (AssertableInertia $page) => $page
                 ->where('servers.0.error', 'The cloud provider refused to create the VPS: server limit reached for this project'));
 
         // It can be started again.
+        $this->app->forgetInstance(CloudProvider::class);
+    }
+
+    public function test_guests_never_see_a_failed_starts_details(): void
+    {
+        $this->app->instance(CloudProvider::class, new class($this->app->make(Repository::class)) extends FakeCloudProvider
+        {
+            public function createServer(ServerSpec $spec): CloudServer
+            {
+                throw new CloudException('error', 'root@203.0.113.5 said no');
+            }
+        });
+        Server::factory()->public()->create(['name' => 'Open', 'slug' => 'open-world']);
+
+        $this->from('/')->post('/servers/open-world/start')
+            ->assertInertiaFlash('toast.message', "Open couldn't start. ".ServerPresenter::PUBLIC_ERROR);
+
+        $this->get('/')->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('servers.0.error_label', 'Last start failed')
+            ->where('servers.0.error', ServerPresenter::PUBLIC_ERROR));
+        $this->assertStringNotContainsString('203.0.113.5', (string) $this->get('/')->getContent());
+
         $this->app->forgetInstance(CloudProvider::class);
     }
 

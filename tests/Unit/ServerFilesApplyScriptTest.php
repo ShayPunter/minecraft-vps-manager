@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Servers\ServerFiles;
+use App\Servers\WorldSync;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -37,7 +38,7 @@ class ServerFilesApplyScriptTest extends TestCase
             $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->root, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST);
 
             foreach ($files as $file) {
-                $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+                $file->isDir() && ! $file->isLink() ? rmdir($file->getPathname()) : unlink($file->getPathname());
             }
 
             rmdir($this->root);
@@ -120,6 +121,57 @@ class ServerFilesApplyScriptTest extends TestCase
         $out = $this->apply([], ['whitelist.json' => $this->whitelist(3), 'server.properties' => "# comment\nwhite-list = true\n"]);
 
         $this->assertStringContainsString('Whitelist on: 3 players in whitelist.json.', $out);
+    }
+
+    /**
+     * Make $link point at $target, or skip where the OS won't (Windows without the right).
+     */
+    private function link(string $target, string $link): void
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            $this->markTestSkipped('No symbolic links on Windows without a special right (CI makes them).');
+        }
+
+        $this->assertTrue(symlink($target, $link) && is_link($link));
+    }
+
+    public function test_the_apps_files_never_go_through_a_link(): void
+    {
+        file_put_contents("{$this->root}/outside.txt", "root-only\n");
+        $this->link("{$this->root}/outside.txt", "{$this->root}/dir/server.properties");
+        $this->link("{$this->root}/outside.txt", "{$this->root}/dir/ops.json");
+
+        $this->apply(['server.properties' => "motd=Hi\n", 'ops.json' => "[]\n"], []);
+
+        // #5527: root replaced the links with files and left what they pointed at alone.
+        $this->assertSame("root-only\n", file_get_contents("{$this->root}/outside.txt"));
+        $this->assertFalse(is_link("{$this->root}/dir/server.properties"));
+        $this->assertFalse(is_link("{$this->root}/dir/ops.json"));
+        $this->assertSame("motd=Hi\n", file_get_contents("{$this->root}/dir/server.properties"));
+        $this->assertSame("[]\n", file_get_contents("{$this->root}/dir/ops.json"));
+    }
+
+    public function test_links_in_the_server_folder_are_removed_and_named(): void
+    {
+        file_put_contents("{$this->root}/outside.txt", "root-only\n");
+        mkdir("{$this->root}/dir/world");
+        file_put_contents("{$this->root}/dir/world/level.dat", 'level');
+        $this->link("{$this->root}/outside.txt", "{$this->root}/dir/eula.txt");
+        $this->link('/etc', "{$this->root}/dir/world/etc");
+
+        mkdir($this->root.'/m/work');
+        $script = $this->root.'/unlink.sh';
+        file_put_contents($script, "set -eu\nM='{$this->root}/m'\nDIR='{$this->root}/dir'\n".WorldSync::unlinkScript());
+        exec('sh '.escapeshellarg($script).' 2>&1', $output, $exit);
+        $out = implode("\n", $output);
+
+        $this->assertSame(0, $exit, $out);
+        $this->assertStringContainsString('Removed the symbolic link eula.txt', $out);
+        $this->assertStringContainsString('Removed the symbolic link world/etc', $out);
+        $this->assertFileDoesNotExist("{$this->root}/dir/eula.txt");
+        $this->assertFalse(is_link("{$this->root}/dir/world/etc"));
+        $this->assertSame('level', file_get_contents("{$this->root}/dir/world/level.dat"));
+        $this->assertSame("root-only\n", file_get_contents("{$this->root}/outside.txt"));
     }
 
     public function test_an_empty_whitelist_says_nothing(): void

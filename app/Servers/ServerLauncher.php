@@ -137,6 +137,10 @@ class ServerLauncher
         // a run that can log in with it, or gets cleaned up with that run.
         $keys = SshKeyPair::generate($name);
         $run->ssh_private_key = $keys->privateKey;
+        // And the VPS's own host key (#5527): cloud-init installs it, every login checks it.
+        // Only the public half is kept; the private one goes to the VPS in its user data.
+        $hostKey = SshKeyPair::generate("host-{$name}");
+        $run->ssh_host_key = SshRemoteShell::keyBlob($hostKey->publicKey);
         $run->save();
 
         try {
@@ -159,7 +163,7 @@ class ServerLauncher
                 location: $server->location,
                 minecraftServerId: $server->id,
                 sshKeyIds: [$sshKey->id],
-                userData: CloudInit::for($server),
+                userData: CloudInit::for($server, $hostKey),
             ));
         } catch (CloudException $e) {
             $this->fail($run, "The cloud provider refused to create the VPS: {$e->getMessage()}");
@@ -302,7 +306,7 @@ class ServerLauncher
         }
 
         try {
-            $result = $this->shell->run($run->ipv4, CloudInit::restartsCommand($run->server), 20, $run->ssh_private_key);
+            $result = $this->shell->run($run->ipv4, CloudInit::restartsCommand($run->server), 20, $run->ssh_private_key, $run->ssh_host_key);
         } catch (RemoteShellException $e) {
             Log::info("Run {$run->id}: couldn't ask systemd how often Minecraft restarted: {$e->getMessage()}");
 
@@ -375,7 +379,7 @@ class ServerLauncher
 
         if (! $force && $started && $run->ipv4 !== null && $run->provider_server_id !== null) {
             try {
-                $result = $this->shell->run($run->ipv4, CloudInit::stopCommand($server), 360, $run->ssh_private_key);
+                $result = $this->shell->run($run->ipv4, CloudInit::stopCommand($server), 360, $run->ssh_private_key, $run->ssh_host_key);
             } catch (RemoteShellException $e) {
                 $this->stopFailed($run, "Couldn't reach the VPS to save the world: {$e->getMessage()}");
 
@@ -438,7 +442,7 @@ class ServerLauncher
         }
 
         try {
-            $result = $this->shell->run($run->ipv4, RunLog::fallbackCommand($run->server), 25, $run->ssh_private_key);
+            $result = $this->shell->run($run->ipv4, RunLog::fallbackCommand($run->server), 25, $run->ssh_private_key, $run->ssh_host_key);
             $this->log->append($run, 'fallback', $result->output);
         } catch (Throwable $e) {
             Log::info("Run {$run->id}: no log pulled before deleting the VPS: {$e->getMessage()}");
@@ -548,9 +552,9 @@ class ServerLauncher
         $shipper = RunLog::shipperFiles($server, $run, $this->log->issueToken($run));
 
         try {
-            $this->shell->putFiles($run->ipv4, WorldSync::prepareFiles($server, $archive, $storage, $downloadUrl, $install) + $shipper, $run->ssh_private_key);
+            $this->shell->putFiles($run->ipv4, WorldSync::prepareFiles($server, $archive, $storage, $downloadUrl, $install) + $shipper, $run->ssh_private_key, $run->ssh_host_key);
             $timeout = (int) config($install instanceof PackPlan ? 'minecraft.pack_prepare_timeout' : 'minecraft.prepare_timeout');
-            $result = $this->shell->run($run->ipv4, WorldSync::PREPARE_COMMAND, $timeout, $run->ssh_private_key);
+            $result = $this->shell->run($run->ipv4, WorldSync::PREPARE_COMMAND, $timeout, $run->ssh_private_key, $run->ssh_host_key);
         } catch (RemoteShellException $e) {
             Log::info("Run {$run->id}: VPS not ready for the world yet, trying again: {$e->getMessage()}");
             $this->retryPrepare($run);
@@ -657,8 +661,8 @@ class ServerLauncher
         }
 
         try {
-            $this->shell->putFiles($host, WorldSync::saveFiles($server, $storage, $upload), $run->ssh_private_key);
-            $result = $this->shell->run($host, WorldSync::saveCommand($server, $path), (int) config('minecraft.save_timeout'), $run->ssh_private_key);
+            $this->shell->putFiles($host, WorldSync::saveFiles($server, $storage, $upload), $run->ssh_private_key, $run->ssh_host_key);
+            $result = $this->shell->run($host, WorldSync::saveCommand($server, $path), (int) config('minecraft.save_timeout'), $run->ssh_private_key, $run->ssh_host_key);
         } catch (RemoteShellException $e) {
             $this->abortUpload($run, $storage, $upload);
             $this->stopFailed($run, "Minecraft stopped, but uploading the world failed: {$e->getMessage()}");
