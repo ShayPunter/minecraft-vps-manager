@@ -14,7 +14,13 @@ GroundStation tag: `minecraft vps manager`. Tracker card #5286. See the control 
 Laravel 13 Vue starter kit (#5280): Inertia 3, Vue 3, TypeScript, Fortify (login, password
 reset, 2FA, password confirmation; **no registration, no email verification**), Wayfinder,
 Vite+ (`vp`), Tailwind 4, shadcn-vue components in `resources/js/components/ui`. Tests are
-PHPUnit 12 (the kit's choice, not Pest). The 2022/2023 Laravel 10 / Jetstream / Linode code
+PHPUnit 13 (the kit's choice, not Pest; 13 since #5432). PHPUnit 13 needs **PHP 8.4**: with
+the dev packages installed, any `php artisan` on 8.3 (even `npm run build`'s
+`wayfinder:generate`) dies on a parse error in `vendor/phpunit`. The app itself still runs
+on 8.3 (`composer check-platform-reqs --no-dev` passes; Forge installs `--no-dev`). On this
+PC put the 8.4 folder first on `PATH` (`~/.pvm/versions/php-8.4.27-Win32-vs17-x64`) and use
+its `composer/composer.phar`. TypeScript stays on 6.x (Dependabot ignores >=7: vue-tsc
+can't run on TS 7's native compiler). The 2022/2023 Laravel 10 / Jetstream / Linode code
 was replaced wholesale; it's in git history before #5280 if anyone needs to look.
 
 ## Commands
@@ -47,7 +53,10 @@ override with `E2E_DB`), runs `migrate:fresh --seed --seeder=E2ESeeder` and star
 
 **On this PC** `php` is a pvm `.bat` shim, which Node can't spawn: serve.mjs exits 1 with no
 output. Run with the real binary:
-`PHP_BINARY="C:/Users/shayp/.pvm/versions/php-8.3.36-Win32-vs16-x64/php.exe" npx playwright test`.
+`PHP_BINARY="C:/Users/shayp/.pvm/versions/php-8.4.27-Win32-vs17-x64/php.exe" npx playwright test`.
+`two-factor.spec` (#5432) signs in through the 2FA challenge (users seeded with
+`E2ESeeder::TOTP_SECRET`, codes made in the spec); its "paste" is `keyboard.insertText`, since
+a real paste would use the machine's clipboard.
 
 ## Code map
 
@@ -132,6 +141,18 @@ output. Run with the real binary:
   where alerts go. `App\Support\Heartbeat` keeps the
   beats in the cache as ISO strings; `servers:sweep` also queues a `QueueHeartbeat`. FAIL =
   exit 1, WARN doesn't fail. Never prints a secret (tested). The Forge setup steps are in the README.
+- Security headers (#5533, `App\Http\Middleware\SecurityHeaders`, appended globally): HSTS
+  one year (no includeSubDomains/preload), CSP `base-uri 'self'; object-src 'none';
+  frame-ancestors 'none'` only (the layout's dark-mode script is inline, so a full CSP needs
+  a nonce), nosniff, Permissions-Policy, and Referrer-Policy strict-origin-when-cross-origin
+  unless the response set its own (the share page keeps no-referrer). No X-Frame-Options:
+  nginx sends SAMEORIGIN and frame-ancestors wins. `SecurityHeadersTest`.
+- Cloudflare (#5703): the site answers through Cloudflare, so `bootstrap/app.php` trusts
+  X-Forwarded-For/-Proto from Cloudflare's published ranges only (`config/trustedproxy.php`,
+  copied from MCPacks; `TRUSTED_PROXIES` replaces the list). `$request->ip()` is then the
+  visitor, or the VPS for the log shipper, for every per-IP limit and `started_from_ip`.
+  Any other address keeps REMOTE_ADDR (`TrustedProxyTest`). Update the ranges from
+  https://www.cloudflare.com/ips if Cloudflare adds one.
 - Run errors (`server_runs.error`: script output, SSH/provider messages, storage user@host,
   IPs) go to admins only (#5527): `ServerPresenter::errorFor()` gives everyone else
   `PUBLIC_ERROR` on the cards and in the start/stop toasts; the label still shows.

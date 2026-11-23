@@ -97,6 +97,20 @@ class E2ESeeder extends Seeder
             'created_at' => now()->subYear(),
         ]);
 
+        // two-factor.spec (#5432): the 2FA challenge's code input (vue-input-otp), typed and
+        // pasted. One user and secret each: Fortify refuses a code that was used in the last
+        // minute by anyone (its replay cache is keyed by the code alone).
+        foreach (self::TOTP_SECRETS as $email => $secret) {
+            User::factory()->create([
+                'name' => 'Tess Totp',
+                'email' => $email,
+                'created_at' => now()->subYear(),
+                'two_factor_secret' => encrypt($secret),
+                'two_factor_recovery_codes' => encrypt(json_encode(['recovery-code-1'])),
+                'two_factor_confirmed_at' => now()->subYear(),
+            ]);
+        }
+
         // waker.spec (#5620), its own admin for Fortify's login limit.
         User::factory()->admin()->create([
             'name' => 'Wren Waker',
@@ -104,4 +118,10 @@ class E2ESeeder extends Seeder
             'created_at' => now()->subYear(),
         ]);
     }
+
+    /** Base32; tests/e2e/two-factor.spec.ts makes the codes from them. */
+    public const TOTP_SECRETS = [
+        'two-factor-typed@example.com' => 'JBSWY3DPEHPK3PXP',
+        'two-factor-pasted@example.com' => 'KRSXG5CTMVRXEZLU',
+    ];
 }
