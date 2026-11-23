@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Form } from '@inertiajs/vue3';
 import BootEstimateNote from '@/components/BootEstimateNote.vue';
+import CopyAddress from '@/components/CopyAddress.vue';
 import IdleStopNote from '@/components/IdleStopNote.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -47,6 +48,11 @@ const busy = ['provisioning', 'booting', 'starting', 'stopping'];
             <code class="rounded bg-muted px-1 py-0.5 font-mono">{{
                 server.address
             }}</code>
+            <CopyAddress
+                :address="server.address"
+                :server-name="server.name"
+                class="ml-1"
+            />
         </p>
         <p
             v-if="server.address"
