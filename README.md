@@ -99,6 +99,20 @@ loader), each checked against the SHA-1 or SHA-256 its source publishes. The fir
 saves the whole folder like any world, so later starts download that and never reinstall.
 Changing the version afterwards doesn't touch a saved world.
 
+Modpacks have two more choices. **Modpack from a server-pack URL** takes the https link to a
+pack's server files zip (CurseForge: the pack's Files tab → Server Pack) and the Java version
+it needs. The first start downloads it, refuses it if an entry would land outside the server
+folder or is a symlink, and runs a Forge or NeoForge installer it ships (All the Mods 10 does).
+**Modrinth modpack** searches Modrinth by name (no key needed): pick the pack and a version, and
+the app sets Java from the version's Minecraft. The first start installs every server file in
+the pack's index, each checked against its SHA-512, skips client-only ones, applies the pack's
+overrides, and installs its loader (Fabric, Quilt, NeoForge or Forge). Either way the server
+starts Java directly through `mvm-launch.sh` (never the pack's own restart script, so a stop
+still saves the world), with `-Xms`/`-Xmx` in the pack's `user_jvm_args.txt` sized to the
+server type. The run's log warns when the pack asks for more memory than that. CurseForge
+search by name isn't offered (it needs an API key). A first start that installs a modpack gets
+45 minutes before the boot timeout (`MVM_PACK_BOOT_TIMEOUT_MINUTES`) instead of 20.
+
 The server's settings also hold **server.properties** (MOTD, difficulty, game mode, max
 players, PvP, whitelist, view and simulation distance, spawn protection, flight, hardcore,
 plus any other `key=value`), the **whitelisted players** and **operators** (names are

@@ -3,6 +3,7 @@
 namespace App\Servers;
 
 use App\Minecraft\InstallPlan;
+use App\Minecraft\Packs\PackPlan;
 use App\Minecraft\Software;
 use App\Models\Server;
 use App\Models\WorldArchive;
@@ -48,7 +49,7 @@ class WorldSync
      *
      * @return array<string, array{0: string, 1: int}> remote path => [contents, mode]
      */
-    public static function prepareFiles(Server $server, ?WorldArchive $archive, ?StorageSettings $storage, ?string $downloadUrl = null, ?InstallPlan $install = null): array
+    public static function prepareFiles(Server $server, ?WorldArchive $archive, ?StorageSettings $storage, ?string $downloadUrl = null, InstallPlan|PackPlan|null $install = null): array
     {
         self::checkSlug($server);
 
@@ -59,6 +60,11 @@ class WorldSync
         // The admin's server.properties / whitelist / ops / run.sh changes (#5377).
         $files = [self::DIR.'/prepare.sh' => [self::prepareScript($server, $archive, $storage, $install), 0700]]
             + ServerFiles::overrideFiles($server);
+
+        if ($install instanceof PackPlan && $install->files !== []) {
+            // A Modrinth pack's index (#5352): one `<sha512> <url> <path>` line per file.
+            $files[self::DIR.'/mrfiles'] = [$install->filesList(), 0600];
+        }
 
         if ($archive !== null) {
             if ($storage === null) {
@@ -188,9 +194,184 @@ class WorldSync
         return $script."\n";
     }
 
-    private static function prepareScript(Server $server, ?WorldArchive $archive, ?StorageSettings $storage, ?InstallPlan $install = null): string
+    /**
+     * A modpack install (#5352), see PackPlan. Exits: 23 download failed, 24 hash differs,
+     * 25 an installer failed, 26 no way to start the pack found, 27 the zip isn't safe.
+     */
+    private static function packScript(PackPlan $plan): string
     {
-        $fetch = $install !== null ? self::installScript($install) : '';
+        $script = "# No saved world yet: install {$plan->description} (#5352).\n"
+            .'echo '.self::quote("Installing {$plan->description}")."\n"
+            .<<<'SH'
+            for tool in curl sha256sum sha512sum zipinfo; do
+                if ! command -v "$tool" >/dev/null 2>&1; then echo "$tool isn't installed on the VPS."; exit 20; fi
+            done
+            dl() { curl -fsSL --globoff --proto '=https' --proto-redir '=https' --retry 3 --retry-delay 5 --connect-timeout 20 -o "$2" "$1"; }
+            get() {
+                if ! dl "$1" "$2"; then echo "Couldn't download $1."; exit 23; fi
+                sum=$("${3}sum" "$2" | cut -d " " -f 1)
+                if [ "$sum" != "$4" ]; then
+                    echo "$(basename "$2") doesn't match the $3 its source published: not installing it."
+                    rm -f "$2"
+                    exit 24
+                fi
+            }
+            # The same rules as a world upload: nothing outside the folder, no symlinks.
+            check_zip() {
+                if ! unzip -tqq "$1" >/dev/null 2>&1; then echo "$2 isn't a readable zip file."; exit 27; fi
+                bad=$(zipinfo -1 "$1" | grep -E '^/|^[A-Za-z]:|\\|(^|/)\.\.(/|$)' | head -n 1 || true)
+                if [ -n "$bad" ]; then echo "$2 has an entry that would unpack outside the server folder: not unpacking it."; exit 27; fi
+                if zipinfo "$1" | grep -q '^l'; then echo "$2 holds a symbolic link, which isn't allowed: not unpacking it."; exit 27; fi
+            }
+
+            SH;
+
+        if ($plan->software === Software::PackUrl) {
+            $script .= 'U='.self::quote((string) $plan->packUrl)."\n"
+                .<<<'SH'
+                if ! dl "$U" "$M/work/pack.zip"; then echo "Couldn't download the server pack."; exit 23; fi
+                check_zip "$M/work/pack.zip" "The server pack"
+                # No hash is published for a server-pack URL, so the log keeps what was installed.
+                echo "Server pack: $(stat -c %s "$M/work/pack.zip") bytes, SHA-256 $(sha256sum "$M/work/pack.zip" | cut -d " " -f 1)"
+                mkdir "$M/work/unpack"
+                unzip -q "$M/work/pack.zip" -d "$M/work/unpack"
+                rm -f "$M/work/pack.zip"
+                src="$M/work/unpack"
+                # A zip holding one folder: use what's inside it.
+                if [ "$(ls -A "$src" | wc -l)" = 1 ]; then
+                    only=$(ls -A "$src")
+                    if [ -d "$src/$only" ] && [ ! -L "$src/$only" ]; then src="$src/$only"; fi
+                fi
+                cp -a "$src/." "$DIR/"
+                rm -rf "$M/work/unpack"
+                # An installer-style pack (All the Mods 10 ships neoforge-…-installer.jar and a
+                # script that installs, then restarts the server forever): run the installer only.
+                if [ ! -d "$DIR/libraries" ]; then
+                    inst=$(find "$DIR" -maxdepth 1 -type f \( -name 'neoforge-*-installer.jar' -o -name 'forge-*-installer.jar' \) | sort | tail -n 1)
+                    if [ -n "$inst" ]; then
+                        echo "Running the pack's $(basename "$inst")"
+                        if ! (cd "$DIR" && java -jar "$inst" --installServer); then echo "The pack's installer failed."; exit 25; fi
+                    fi
+                fi
+
+                SH;
+        } else {
+            $mrpack = $plan->mrpack;
+            $loader = $plan->loader;
+
+            if ($mrpack === null || $loader === null) {
+                throw new InvalidArgumentException('A Modrinth install needs the .mrpack and its loader.');
+            }
+
+            $script .= 'get '.self::quote($mrpack->url).' "$M/work/pack.mrpack" sha512 '.self::quote($mrpack->hash)."\n"
+                .<<<'SH'
+                check_zip "$M/work/pack.mrpack" "The .mrpack"
+                n=0
+                if [ -f "$M/mrfiles" ]; then
+                    while IFS=' ' read -r sha url path; do
+                        [ -n "$path" ] || continue
+                        case "$path" in /*|*..*) echo "Refusing $path from the pack's index."; exit 27 ;; esac
+                        mkdir -p "$(dirname "$DIR/$path")"
+                        if ! dl "$url" "$DIR/$path"; then echo "Couldn't download $path."; exit 23; fi
+                        sum=$(sha512sum "$DIR/$path" | cut -d " " -f 1)
+                        if [ "$sum" != "$sha" ]; then echo "$path doesn't match the SHA-512 in the pack's index: not installing it."; rm -f "$DIR/$path"; exit 24; fi
+                        n=$((n + 1))
+                    done < "$M/mrfiles"
+                fi
+                echo "Downloaded $n files from the pack's index."
+                mkdir "$M/work/mr"
+                unzip -q "$M/work/pack.mrpack" -d "$M/work/mr"
+                # Modrinth's format: overrides/ first, then server-overrides/ on top.
+                for o in overrides server-overrides; do
+                    if [ -d "$M/work/mr/$o" ]; then cp -a "$M/work/mr/$o/." "$DIR/"; fi
+                done
+                rm -rf "$M/work/mr" "$M/work/pack.mrpack"
+
+                SH;
+
+            foreach ($loader->downloads as $download) {
+                $target = ($download->intoServerFolder ? '"$DIR"/' : '"$M/work"/').$download->file;
+                $script .= 'get '.self::quote($download->url).' '.$target.' '.$download->algorithm.' '.self::quote($download->hash)."\n";
+            }
+
+            $installer = '"$M/work/'.$loader->installer()?->file.'"';
+            $mc = self::quote($loader->minecraftVersion);
+            $version = self::quote($loader->loaderVersion);
+
+            $script .= 'echo '.self::quote("Installing {$loader->label()}")."\n".match ($loader->loader) {
+                'fabric' => "if ! java -jar {$installer} server -mcversion {$mc} -loader {$version} -dir \"\$DIR\"; then echo \"The Fabric installer failed.\"; exit 25; fi\n",
+                'quilt' => "if ! java -jar {$installer} install server {$mc} {$version} --install-dir=\"\$DIR\"; then echo \"The Quilt installer failed.\"; exit 25; fi\n",
+                default => "if ! (cd \"\$DIR\" && java -jar {$installer} --installServer); then echo \"The {$loader->label()} installer failed.\"; exit 25; fi\n",
+            };
+        }
+
+        return $script.self::launchScript();
+    }
+
+    /**
+     * Writes mvm-launch.sh (#5352): Java straight away, never a pack's own restart loop. A
+     * Forge/NeoForge install's unix_args.txt first, then a Fabric/Quilt launcher, then a
+     * plain server.jar. Public for the test that runs it with a real sh.
+     */
+    public static function launchScript(): string
+    {
+        return <<<'SH'
+            args=$(cd "$DIR" && find libraries/net/neoforged/neoforge libraries/net/minecraftforge/forge -name unix_args.txt 2>/dev/null | sort -V | tail -n 1)
+            if [ -n "$args" ]; then
+                case "$args" in *[!A-Za-z0-9._/+-]*) echo "Refusing the loader's argument file $args."; exit 26 ;; esac
+                launch="java @user_jvm_args.txt @$args nogui"
+            elif [ -f "$DIR/fabric-server-launch.jar" ]; then
+                launch="java @user_jvm_args.txt -jar fabric-server-launch.jar nogui"
+            elif [ -f "$DIR/quilt-server-launch.jar" ]; then
+                launch="java @user_jvm_args.txt -jar quilt-server-launch.jar nogui"
+            elif [ -f "$DIR/server.jar" ]; then
+                launch="java @user_jvm_args.txt -jar server.jar nogui"
+            else
+                echo "Couldn't find how to start this pack: no unix_args.txt from a Forge or NeoForge install, and no fabric-server-launch.jar, quilt-server-launch.jar or server.jar."
+                exit 26
+            fi
+            printf '#!/bin/sh\n# Written by Minecraft VPS Manager (#5352) when it installed this pack.\nexec %s "$@"\n' "$launch" > "$DIR/mvm-launch.sh"
+            echo "Starts with: $launch"
+
+            SH;
+    }
+
+    /**
+     * A modpack's memory (#5352), on every start: -Xms/-Xmx from the server type's RAM go
+     * into user_jvm_args.txt (the pack's own lines replaced, the rest kept), with a warning
+     * in the log when the pack asks for more than the type leaves Java. An admin's own
+     * user_jvm_args.txt (#5377) is copied over it afterwards and wins.
+     */
+    public static function heapScript(int $heapMb): string
+    {
+        return "HEAP={$heapMb}\n".<<<'SH'
+            J="$DIR/user_jvm_args.txt"
+            if [ -f "$J" ]; then
+                asked=$(grep -E '^-Xmx[0-9]+[GgMm]$' "$J" | tail -n 1 | sed 's/^-Xmx//' || true)
+                if [ -n "$asked" ]; then
+                    num=${asked%?}
+                    case "$asked" in *[Gg]) mb=$((num * 1024)) ;; *) mb=$num ;; esac
+                    if [ "$mb" -gt "$HEAP" ]; then
+                        echo "The pack asks for -Xmx$asked, but this server type leaves Java ${HEAP} MB: it may run out of memory. Pick a server type with more RAM."
+                    fi
+                fi
+                grep -v -E '^-Xm[sx][0-9]' "$J" > "$M/work/jvm" || true
+                cat "$M/work/jvm" > "$J"
+                rm -f "$M/work/jvm"
+            fi
+            printf -- '-Xms%sM\n-Xmx%sM\n' "$HEAP" "$HEAP" >> "$J"
+            echo "Java memory: ${HEAP} MB (from the server type)."
+
+            SH;
+    }
+
+    private static function prepareScript(Server $server, ?WorldArchive $archive, ?StorageSettings $storage, InstallPlan|PackPlan|null $install = null): string
+    {
+        $fetch = match (true) {
+            $install instanceof InstallPlan => self::installScript($install),
+            $install instanceof PackPlan => self::packScript($install),
+            default => '',
+        };
 
         if ($archive !== null && $storage !== null) {
             if (preg_match(self::ARCHIVE_PATH_PATTERN, $archive->path) !== 1) {
@@ -251,6 +432,7 @@ class WorldSync
 
             SH
             .$fetch
+            .($server->software->isPack() && $server->heap_mb !== null ? self::heapScript($server->heap_mb) : '')
             .ServerFiles::applyScript()
             .<<<'SH'
             # A start command like ./run.sh: zips made on Windows lose the executable bit.
@@ -262,6 +444,9 @@ class WorldSync
                 ? "printf '%s\\n' '#Accepted for this server in Minecraft VPS Manager (https://aka.ms/MinecraftEULA)' 'eula=true' > \"\$DIR/eula.txt\"\n"
                 : '')
             .<<<'SH'
+            # Zips can store entries with no permissions at all (a real .mrpack's overrides came out
+            # as ---------- on Nov 23, #5352): the owner must be able to read and write everything.
+            chmod -R u+rwX "$DIR"
             chown -R minecraft:minecraft /opt/minecraft
             systemctl start "$UNIT"
             echo prepared
@@ -320,7 +505,7 @@ class WorldSync
             exec 9>"$M/lock"
             if ! flock -n 9; then echo "Another world setup or save is still running on this VPS."; exit 75; fi
             # The storage login is only here while this script runs.
-            cleanup() { rm -rf "$M/work" "$M/key" "$M/password" "$M/askpass" "$M/curl.conf" "$M/known_hosts" "$M/get.conf" "$M/parts" "$M/complete.conf" "$M/files"; }
+            cleanup() { rm -rf "$M/work" "$M/key" "$M/password" "$M/askpass" "$M/curl.conf" "$M/known_hosts" "$M/get.conf" "$M/parts" "$M/complete.conf" "$M/files" "$M/mrfiles"; }
             trap cleanup EXIT
 
             SH;

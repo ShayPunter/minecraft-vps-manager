@@ -70,7 +70,7 @@ class ServerController extends Controller
 
         return Inertia::render('admin/servers/Edit', [
             'server' => [
-                ...$server->only(['id', 'name', 'slug', 'description', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'minecraft_version']),
+                ...$server->only(['id', 'name', 'slug', 'description', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'minecraft_version', 'pack_url', 'modrinth_project_id', 'modrinth_version_id', 'modrinth_title', 'heap_mb']),
                 'software' => $server->software->value,
                 'visibility' => $server->visibility->value,
                 'share_url' => $server->shareUrl(),
@@ -142,7 +142,7 @@ class ServerController extends Controller
         $versions = [];
         $error = null;
 
-        foreach (Software::installable() as $software) {
+        foreach (Software::versioned() as $software) {
             try {
                 $versions[$software->value] = $source->versions($software);
             } catch (VersionSourceException $e) {

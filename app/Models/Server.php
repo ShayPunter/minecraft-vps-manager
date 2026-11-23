@@ -31,7 +31,12 @@ use Illuminate\Support\Str;
  * @property string $start_command
  * @property int $java_version
  * @property Software $software custom, or what the first start without a saved world installs (#5351)
- * @property string|null $minecraft_version the version it installs (null for custom)
+ * @property string|null $minecraft_version the version it installs (null for custom and pack URLs)
+ * @property string|null $pack_url a server-pack zip (#5352)
+ * @property string|null $modrinth_project_id a Modrinth modpack (#5352)
+ * @property string|null $modrinth_version_id its version
+ * @property string|null $modrinth_title shown in the form
+ * @property int|null $heap_mb a modpack's -Xms/-Xmx, from the server type's RAM
  * @property array<string, string>|null $properties server.properties values an admin changed (#5377)
  * @property list<array{uuid: string, name: string}>|null $whitelist written as whitelist.json when set
  * @property list<array{uuid: string, name: string, level: int}>|null $ops written as ops.json when set
@@ -49,7 +54,7 @@ use Illuminate\Support\Str;
  * @property-read ServerRun|null $latestRun
  * @property-read WorldArchive|null $currentWorldArchive
  */
-#[Fillable(['name', 'slug', 'description', 'visibility', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'software', 'minecraft_version', 'properties', 'whitelist', 'ops', 'run_sh', 'user_jvm_args'])]
+#[Fillable(['name', 'slug', 'description', 'visibility', 'icon_url', 'server_type', 'location', 'start_command', 'java_version', 'idle_minutes', 'subdomain', 'software', 'minecraft_version', 'pack_url', 'modrinth_project_id', 'modrinth_version_id', 'modrinth_title', 'heap_mb', 'properties', 'whitelist', 'ops', 'run_sh', 'user_jvm_args'])]
 class Server extends Model
 {
     /** @use HasFactory<ServerFactory> */
@@ -194,6 +199,7 @@ class Server extends Model
             'eula_accepted_at' => 'datetime',
             'java_version' => 'integer',
             'idle_minutes' => 'integer',
+            'heap_mb' => 'integer',
             'current_world_archive_id' => 'integer',
         ];
     }

@@ -210,7 +210,7 @@ output. Run with the real binary:
   `-Q "-RNFR …" -Q "-RNTO …"`. Secrets are only on the VPS while Minecraft isn't running and
   never in a command line; the trap deletes them. Starts are refused (`StartRefused::noWorldStorage`)
   while `WorldStorage::settings()` throws, and `app:doctor` runs the connection test.
-  Timeouts: prepare 1200 s (job 1500), save 2400 s (StopServerRun 2700), queue `retry_after`
+  Timeouts: prepare 1200 s (2400 s for a pack install; job 2700), save 2400 s (StopServerRun 2700), queue `retry_after`
   3600, `stuck_stop_minutes` 50.
   `FakeRemoteShell` answers prepare.sh with "prepared" and save.sh by writing a small zip to
   the fake storage at the given path; `failMatching()`, `emptyWorld()`, `forget()`
@@ -320,13 +320,51 @@ output. Run with the real binary:
   compares `sha1sum`/`sha256sum` (exit 24, file removed), Fabric then runs
   `java -jar fabric-installer.jar server -mcversion V -loader L -dir $DIR` (it downloads the
   loader libraries from Fabric's Maven itself; exit 25 without `fabric-server-launch.jar`).
-  The first stop saves the folder, so nothing reinstalls. Checked for real (Nov 22) against
+  The first stop saves the folder, so nothing reinstalls. Modpacks (#5352): see below. Checked for real (Nov 22) against
   the live APIs in an `ubuntu:24.04` container (openjdk-25-jre-headless from noble, stubbed
   systemctl/cloud-init, start script run as the minecraft user): Vanilla 26.3, Paper 26.3
   build 258 and Fabric 26.3 (loader 0.20.1) each reached "Done" and answered
   `TcpMinecraftProbe` from a `php:8.4-cli` container on the same network; a wrong SHA-1 was
   refused (exit 24, no jar left). E2E: `software.spec` (`software-admin@example.com`); older
   specs that set a Java version pick Software → "My own start command" first.
+- Modpacks (#5352, `App\Minecraft\Packs`, `App\Minecraft\Modrinth`): `Software::PackUrl`
+  (`servers.pack_url`, https, `PackPlan::URL_PATTERN`, Java from the form) and
+  `Software::Modrinth` (`modrinth_project_id` / `modrinth_version_id`, 8-char ids;
+  `modrinth_title`; `minecraft_version` and Java from the version). `Software::versioned()` =
+  Vanilla/Paper/Fabric (version lists); `installable()` includes the packs. Both packs get
+  `start_command = sh mvm-launch.sh` and `servers.heap_mb` (`Installer::heapMb`).
+  `ServerLauncher::prepare()` with no archive: `PackPlan::forUrl()` or
+  `ModrinthSource::plan()` (`ModrinthException`: `permanent` → giveUp, else retry like a
+  VersionSourceException). `OnlineModrinth` (API v2, no key, User-Agent names the app; search
+  with facets `project_type:modpack` + `server_side:required|optional`, cached 10 min,
+  version/title a day) downloads the `.mrpack` in the app, checks its SHA-512 and
+  `ZipInspector`, and `ModrinthIndex::plan()` reads `modrinth.index.json`: files with
+  `env.server = unsupported` skipped, each `PackFile` (path data only: printable, no
+  backslash, ZipInspector-safe; hosts cdn.modrinth.com, github.com, raw.githubusercontent.com,
+  gitlab.com; SHA-512) goes to the VPS as `/root/.mvm/mrfiles` lines `<sha512> <url> <path>`
+  (deleted by the trap). `ModLoaders`: Fabric = the Fabric plan's downloads, Quilt = vanilla +
+  meta.quiltmc.org's newest installer (SHA-256 inline), NeoForge / Forge = the Maven installer
+    - its `.sha256`. Real Modrinth links are percent-encoded (`Download` allows `%`) and real
+      paths have apostrophes. prepare.sh (`WorldSync::packScript`): `check_zip` (unzip -t, zipinfo
+      for `/`, drive letters, `\`, `..`, symlinks; exit 27), pack URL → curl, size + SHA-256 in
+      the log, unzip (single-folder rule), a top-level `neoforge-*/forge-*-installer.jar` runs with
+      `--installServer` when there's no `libraries/`; Modrinth → mrpack, every file + sha512sum,
+      `overrides/` then `server-overrides/`, the loader's installer. `launchScript()` writes
+      `mvm-launch.sh` (`exec java @user_jvm_args.txt @<newest unix_args.txt> nogui`, else
+      fabric/quilt launcher, else server.jar; exit 26). `heapScript()` on **every** start of a
+      pack server (before `applyScript`, so the admin's user_jvm_args wins): drops `-Xms/-Xmx`
+      lines, appends the type's, warns when the pack's `-Xmx` is bigger. prepare.sh now
+      `chmod -R u+rwX "$DIR"` before the chown: a real .mrpack's overrides unpacked as `----------`.
+      Timeouts: `pack_boot_timeout_minutes` 45 (Watchdog, pack server with no current archive),
+      `pack_prepare_timeout` 2400 (PrepareServerRun job 2700). `FakeModrinth` in testing/e2e
+      (Cobble Pack `AAAAAAAA` Fabric, Forge Frontier `BBBBBBBB` NeoForge; `failWith($m, $permanent)`).
+      Admin JSON for the form: `GET /admin/modrinth/search?q=`, `/admin/modrinth/projects/{id}/versions`
+      (`ModrinthPicker.vue`). E2E: `modpack.spec` (`modpack-admin@example.com`).
+      `PackLaunchScriptTest` runs the launch + memory steps with real sh. Checked for real (Nov 23)
+      in `ubuntu:24.04` with Java stubbed (scheduled runs can't run downloaded jars, #5456):
+      Vanilla Perfected 1.0.3 from the live API (112 files, all SHA-512s, Fabric 0.19.3) and Shay's
+      ATM10 ServerFiles-8.6.zip (468 mods, the NeoForge installer found, unix_args launch, the
+      8 GB warning); a `../` zip and a symlink zip refused. Not run: a real Minecraft start of either.
 - Server config (#5377, `App\Servers\ServerFiles` + `ServerConfigForm`): server.properties,
   whitelist.json, ops.json, run.sh and user_jvm_args.txt. `world_archives.files` (json) holds
   the world's own copies: `ServerFiles::fromZip()` on upload (top level or inside a single

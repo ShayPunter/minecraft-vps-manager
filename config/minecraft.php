@@ -20,6 +20,9 @@ return [
     // Watchdog (#5283). Idle minutes before a stop are set per server (default 15).
     // A run that isn't online this long after Start is deleted and marked failed.
     'boot_timeout_minutes' => (int) (env('MVM_BOOT_TIMEOUT_MINUTES') ?: 20),
+    // A start that installs a modpack (#5352) downloads it, every mod and runs the loader's
+    // installer first (All the Mods 10: 1.26 GB), so it gets longer.
+    'pack_boot_timeout_minutes' => (int) (env('MVM_PACK_BOOT_TIMEOUT_MINUTES') ?: 45),
     // A start is given up as soon as systemd has restarted a crashing Minecraft this often (#5376).
     'crash_loop_restarts' => 3,
     // Alert once when a run has been up longer than this (#5276: 8 hours).
@@ -31,6 +34,7 @@ return [
     // save.sh zips, uploads and reads the world back. Below PrepareServerRun's and
     // StopServerRun's job timeouts, which are below the queue's retry_after.
     'prepare_timeout' => 1200,
+    'pack_prepare_timeout' => 2400,
     'save_timeout' => 2400,
     // Where alerts go: this address (else every admin's email), plus a Discord webhook if set.
     'alert_mail' => env('MVM_ALERT_MAIL') ?: null,

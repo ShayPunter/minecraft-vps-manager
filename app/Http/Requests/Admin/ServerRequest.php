@@ -7,6 +7,10 @@ use App\Dns\Dns;
 use App\Enums\Visibility;
 use App\Minecraft\Installer;
 use App\Minecraft\InstallPlan;
+use App\Minecraft\Modrinth\ModrinthException;
+use App\Minecraft\Modrinth\ModrinthSource;
+use App\Minecraft\Modrinth\ModrinthVersion;
+use App\Minecraft\Packs\PackPlan;
 use App\Minecraft\Software;
 use App\Minecraft\VersionSource;
 use App\Minecraft\VersionSourceException;
@@ -89,9 +93,13 @@ class ServerRequest extends FormRequest
             // What it runs (#5351). For Vanilla/Paper/Fabric the app sets the start command
             // and Java itself (resolveInstall()), so the form's fields for those are ignored.
             'software' => ['required', Rule::enum(Software::class)],
-            'minecraft_version' => ['exclude_if:software,custom', 'required', 'string', 'max:40', 'regex:'.InstallPlan::VERSION_PATTERN],
+            'minecraft_version' => ['exclude_unless:software,vanilla,paper,fabric', 'required', 'string', 'max:40', 'regex:'.InstallPlan::VERSION_PATTERN],
             'start_command' => ['exclude_unless:software,custom', 'required', 'string', 'max:500', 'not_regex:/[\r\n\0]/'],
-            'java_version' => ['exclude_unless:software,custom', 'required', 'integer', Rule::in(config('minecraft.java_versions'))],
+            // A server-pack URL doesn't say which Java it needs, so the admin picks it (#5352).
+            'java_version' => ['exclude_unless:software,custom,pack_url', 'required', 'integer', Rule::in(config('minecraft.java_versions'))],
+            'pack_url' => ['exclude_unless:software,pack_url', 'required', 'string', 'max:2048', 'url:https', 'regex:'.PackPlan::URL_PATTERN],
+            'modrinth_project_id' => ['exclude_unless:software,modrinth', 'required', 'string', 'regex:'.ModrinthVersion::ID_PATTERN],
+            'modrinth_version_id' => ['exclude_unless:software,modrinth', 'required', 'string', 'regex:'.ModrinthVersion::ID_PATTERN],
             'idle_minutes' => ['required', 'integer', 'min:5', 'max:240'],
             'subdomain' => [
                 'nullable', 'string', 'max:190', 'regex:'.Server::SUBDOMAIN_PATTERN,
@@ -113,11 +121,18 @@ class ServerRequest extends FormRequest
             'subdomain.regex' => 'Use lowercase letters, digits and dashes, with dots between parts (e.g. atm9 or mc.atm9).',
             'subdomain.unique' => 'Another server already uses that name.',
             'minecraft_version.required' => 'Pick a Minecraft version.',
+            'pack_url.required' => 'Paste the server pack\'s download link.',
+            'pack_url.url' => 'Use the https link to the server pack\'s zip.',
+            'pack_url.regex' => 'Use the https link to the server pack\'s zip, without spaces or quotes.',
+            'modrinth_project_id.required' => 'Search for a modpack and pick one.',
+            'modrinth_project_id.regex' => 'Search for a modpack and pick one.',
+            'modrinth_version_id.required' => 'Pick a version of the modpack.',
+            'modrinth_version_id.regex' => 'Pick a version of the modpack.',
             ...ServerConfigForm::messages(),
         ];
     }
 
-    /** @var array{java_version: int, start_command: string}|null */
+    /** @var array<string, mixed>|null the start command, Java and pack fields worked out for an install */
     private ?array $installSettings = null;
 
     /** @var array<string, mixed>|null what ServerConfigForm worked out (#5377) */
@@ -133,9 +148,23 @@ class ServerRequest extends FormRequest
     public function serverAttributes(): array
     {
         $attributes = $this->safe()->except(['eula', ...array_keys(ServerConfigForm::rules())]);
+        $software = Software::tryFrom((string) ($attributes['software'] ?? ''));
 
-        if (($attributes['software'] ?? null) === Software::Custom->value) {
+        if ($software === Software::Custom || $software === Software::PackUrl) {
             $attributes['minecraft_version'] = null;
+        }
+
+        // Only the chosen software's own fields are kept (#5352).
+        if ($software !== Software::PackUrl) {
+            $attributes['pack_url'] = null;
+        }
+
+        if ($software !== Software::Modrinth) {
+            $attributes = [...$attributes, 'modrinth_project_id' => null, 'modrinth_version_id' => null, 'modrinth_title' => null];
+        }
+
+        if ($software === null || ! $software->isPack()) {
+            $attributes['heap_mb'] = null;
         }
 
         return [...$attributes, ...($this->installSettings ?? []), ...($this->config ?? [])];
@@ -212,6 +241,12 @@ class ServerRequest extends FormRequest
             return;
         }
 
+        if ($software->isPack()) {
+            $this->resolvePack($validator, $software);
+
+            return;
+        }
+
         $version = (string) $this->input('minecraft_version');
         $source = app(VersionSource::class);
 
@@ -255,5 +290,73 @@ class ServerRequest extends FormRequest
             'java_version' => $java,
             'start_command' => Installer::startCommand($software, $type->memoryGb),
         ];
+    }
+
+    /**
+     * A modpack (#5352): it starts with the mvm-launch.sh its install writes, and its memory
+     * follows the server type's RAM. A Modrinth version must belong to the picked project and
+     * name a Minecraft version this app knows, whose Java it then installs.
+     */
+    private function resolvePack(Validator $validator, Software $software): void
+    {
+        if ($validator->errors()->hasAny(['pack_url', 'java_version', 'modrinth_project_id', 'modrinth_version_id'])) {
+            return;
+        }
+
+        try {
+            $type = app(ServerCatalog::class)->findType((string) $this->input('server_type'));
+        } catch (CloudException $e) {
+            $validator->errors()->add('server_type', "Couldn't read the server types to size Java's memory: {$e->getMessage()} Try again in a minute.");
+
+            return;
+        }
+
+        if ($type === null) {
+            $validator->errors()->add('server_type', 'Pick a server type from the list.');
+
+            return;
+        }
+
+        $settings = ['start_command' => Installer::PACK_START_COMMAND, 'heap_mb' => Installer::heapMb($type->memoryGb)];
+
+        if ($software === Software::Modrinth) {
+            try {
+                $modrinth = app(ModrinthSource::class);
+                $version = $modrinth->version((string) $this->input('modrinth_version_id'));
+
+                if ($version->projectId !== $this->input('modrinth_project_id')) {
+                    $validator->errors()->add('modrinth_version_id', 'That version belongs to another modpack. Pick the version again.');
+
+                    return;
+                }
+
+                $title = $modrinth->title($version->projectId);
+                $required = app(VersionSource::class)->javaFor(Software::Vanilla, $version->minecraftVersion);
+            } catch (ModrinthException $e) {
+                $validator->errors()->add('modrinth_version_id', $e->getMessage().($e->permanent ? '' : ' Try again in a minute.'));
+
+                return;
+            } catch (VersionSourceException) {
+                $validator->errors()->add('modrinth_version_id', "This version is for Minecraft {$version->minecraftVersion}, which this app can't install (1.17 on).");
+
+                return;
+            }
+
+            $java = Installer::javaFor($required);
+
+            if ($java === null) {
+                $validator->errors()->add('modrinth_version_id', "Minecraft {$version->minecraftVersion} needs Java {$required}, which this app can't install yet.");
+
+                return;
+            }
+
+            $settings += [
+                'java_version' => $java,
+                'minecraft_version' => $version->minecraftVersion,
+                'modrinth_title' => mb_substr($title, 0, 200),
+            ];
+        }
+
+        $this->installSettings = $settings;
     }
 }

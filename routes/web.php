@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\DnsController;
+use App\Http\Controllers\Admin\ModrinthController;
 use App\Http\Controllers\Admin\ServerController;
 use App\Http\Controllers\Admin\ServerLogController;
 use App\Http\Controllers\Admin\UserController;
@@ -60,6 +61,10 @@ Route::middleware(['auth', EnsureUserIsAdmin::class])
         Route::resource('servers', ServerController::class)->except(['show']);
         Route::post('servers/{server}/stop', [ServerController::class, 'stop'])->name('servers.stop');
         Route::post('servers/{server}/share-link', [ServerController::class, 'regenerateShareLink'])->name('servers.share-link');
+        // The server form's Modrinth picker (#5352).
+        Route::get('modrinth/search', [ModrinthController::class, 'search'])->name('modrinth.search');
+        Route::get('modrinth/projects/{project}/versions', [ModrinthController::class, 'versions'])
+            ->where('project', '[A-Za-z0-9]{8}')->name('modrinth.versions');
         // Each run's log (#5367).
         Route::get('servers/{server}/log', [ServerLogController::class, 'show'])->name('servers.log');
         Route::get('servers/{server}/log/lines', [ServerLogController::class, 'lines'])->name('servers.log.lines');

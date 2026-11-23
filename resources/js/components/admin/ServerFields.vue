@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import ModrinthPicker from '@/components/admin/ModrinthPicker.vue';
 import InputError from '@/components/InputError.vue';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,7 +37,15 @@ const versionsHere = computed(
 const minecraftVersion = ref(
     props.server?.minecraft_version ?? versionsHere.value[0] ?? '',
 );
-const installs = computed(() => chosen.value !== 'custom');
+// Picked by a Minecraft version from a list (#5351); modpacks have their own fields (#5352).
+const versioned = computed(() =>
+    ['vanilla', 'paper', 'fabric'].includes(chosen.value),
+);
+const isPack = computed(
+    () => chosen.value === 'pack_url' || chosen.value === 'modrinth',
+);
+// In the script, not a template attribute: vue-tsc 3.3.13 misreads "https://" there.
+const packUrlPlaceholder = 'https://…/ServerFiles.zip';
 
 function chooseSoftware(value: SoftwareValue): void {
     chosen.value = value;
@@ -329,13 +338,13 @@ const currentTypeRetired = computed(
             class="text-sm text-destructive"
             data-test="software-error"
         >
-            {{ props.software.error }} Vanilla, Paper and Fabric need it; your
-            own start command still works.
+            {{ props.software.error }} Vanilla, Paper and Fabric need it;
+            modpacks and your own start command still work.
         </p>
         <InputError :message="errors.software" />
     </div>
 
-    <div v-if="installs" class="grid gap-2">
+    <div v-if="versioned" class="grid gap-2">
         <Label for="minecraft_version">Minecraft version</Label>
         <select
             v-if="versionsHere.length > 0"
@@ -384,7 +393,55 @@ const currentTypeRetired = computed(
         <InputError :message="errors.minecraft_version" />
     </div>
 
-    <div v-if="!installs" class="grid gap-2">
+    <div v-if="chosen === 'pack_url'" class="grid gap-2">
+        <Label for="pack_url">Server pack URL</Label>
+        <Input
+            id="pack_url"
+            name="pack_url"
+            type="url"
+            :default-value="server?.pack_url ?? ''"
+            :placeholder="packUrlPlaceholder"
+            required
+            autocomplete="off"
+        />
+        <p class="text-sm text-muted-foreground">
+            The download link of the pack's server files zip (on CurseForge: the
+            pack's Files tab → Server Pack). A Forge or NeoForge installer in it
+            (All the Mods 10 ships one) runs on the first start.
+        </p>
+        <InputError :message="errors.pack_url" />
+    </div>
+
+    <ModrinthPicker
+        v-if="chosen === 'modrinth'"
+        :project-id="server?.modrinth_project_id"
+        :version-id="server?.modrinth_version_id"
+        :title="server?.modrinth_title"
+        :errors="errors"
+        :select-class="selectClass"
+    />
+
+    <p
+        v-if="isPack"
+        class="text-sm text-muted-foreground"
+        data-test="pack-hint"
+    >
+        <template v-if="hasSavedWorld">
+            This server has a saved world, so starts use that. Changing the pack
+            here doesn't reinstall it.
+        </template>
+        <template v-else>
+            The first start installs the pack and its loader, and the first stop
+            saves the whole folder, so later starts don't reinstall.
+        </template>
+        It starts Java directly (never the pack's own restart script), with
+        memory from the server type<template
+            v-if="server?.heap_mb && server.software === chosen"
+            >: {{ server.heap_mb }} MB</template
+        >. The run's log warns if the pack asks for more.
+    </p>
+
+    <div v-if="chosen === 'custom'" class="grid gap-2">
         <Label for="start_command">Start command</Label>
         <Input
             id="start_command"
@@ -400,7 +457,7 @@ const currentTypeRetired = computed(
         <InputError :message="errors.start_command" />
     </div>
 
-    <div v-if="!installs" class="grid gap-2">
+    <div v-if="chosen === 'custom' || chosen === 'pack_url'" class="grid gap-2">
         <Label for="java_version">Java version</Label>
         <select id="java_version" name="java_version" :class="selectClass">
             <option
