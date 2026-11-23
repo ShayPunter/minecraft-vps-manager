@@ -17,7 +17,7 @@ class HomeController extends Controller
 {
     public function __invoke(Request $request, ServerLauncher $launcher): Response
     {
-        $launcher->advanceActive();
+        $launcher->advanceSoon();
 
         return Inertia::render('Welcome', [
             'servers' => ServerPresenter::list(Server::query()->where('visibility', Visibility::Public), $request->user()),

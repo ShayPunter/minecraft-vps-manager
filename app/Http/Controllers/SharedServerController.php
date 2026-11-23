@@ -23,7 +23,7 @@ class SharedServerController extends Controller
     public function show(Request $request, string $token, ServerLauncher $launcher): Response
     {
         $server = $this->find($token);
-        $launcher->advanceActive();
+        $launcher->advanceSoon();
         $server->load(['activeRun', 'latestRun']);
 
         $response = Inertia::render('Shared', [

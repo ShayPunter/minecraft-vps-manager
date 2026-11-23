@@ -7,6 +7,7 @@ use App\Cloud\CloudProvider;
 use App\Cloud\ServerSpec;
 use App\Dns\Dns;
 use App\Enums\RunStatus;
+use App\Jobs\AdvanceActiveRuns;
 use App\Jobs\PrepareServerRun;
 use App\Jobs\ProvisionServerRun;
 use App\Jobs\StopServerRun;
@@ -27,6 +28,7 @@ use App\WorldStorage\StorageSettings;
 use App\WorldStorage\StorageUnavailable;
 use App\WorldStorage\WorldStorage;
 use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -197,31 +199,102 @@ class ServerLauncher
     }
 
     /**
+     * For a page view (home, dashboard, share page): queue AdvanceActiveRuns when a booting or
+     * starting run is due a check (#5752). The request itself never waits on Hetzner,
+     * Cloudflare, the Minecraft port or SSH; the page's next poll shows what the job found.
+     */
+    public function advanceSoon(): void
+    {
+        if ($this->dueRuns()->exists()) {
+            AdvanceActiveRuns::dispatch();
+        }
+    }
+
+    /**
      * Move every booting/starting run on, at most once per check interval each.
-     * Called on page views (so a watched start feels quick) and every minute by servers:advance.
+     * Runs in AdvanceActiveRuns (queued by page views, so a watched start feels quick) and
+     * every minute in servers:watch ($force: whatever the interval).
+     *
+     * One advance per run at a time (#5752): each run is locked while it's checked, and
+     * (without $force) claimed by moving checked_at on in one UPDATE that only matches while
+     * it's still due, so two workers that read the same due run make one set of provider calls.
      */
     public function advanceActive(bool $force = false): void
     {
         $interval = (int) config('minecraft.check_interval');
 
-        ServerRun::query()
-            ->active()
-            ->whereIn('status', [RunStatus::Booting, RunStatus::Starting])
-            ->when(! $force, fn ($query) => $query->where(fn ($q) => $q
-                ->whereNull('checked_at')
-                ->orWhere('checked_at', '<=', now()->subSeconds($interval))))
+        $this->dueRuns($force)
             ->with('server')
             ->get()
-            ->each(function (ServerRun $run): void {
+            ->each(function (ServerRun $run) use ($force, $interval): void {
+                // Longer than the worst case of one advance (Hetzner 30 s, Cloudflare 10 s,
+                // the probe and the SSH restart check 20 s), so it can't lapse mid-check.
+                $lock = Cache::lock("mvm:advance:{$run->id}", 180);
+
+                if (! $lock->get()) {
+                    return;
+                }
+
                 try {
+                    // What the database says now: another check may have moved it on, or a
+                    // stop may have begun, since the list was read.
+                    $run->refresh();
+
+                    if (! in_array($run->status, [RunStatus::Booting, RunStatus::Starting], true)
+                        || (! $force && ! $this->claim($run, $interval))) {
+                        return;
+                    }
+
                     $this->advance($run);
                 } catch (CloudException $e) {
                     // A provider hiccup isn't a failed start: try again next time.
                     Log::warning("Couldn't check run {$run->id}: {$e->getMessage()}");
                     $run->checked_at = now();
                     $run->save();
+                } finally {
+                    $lock->release();
                 }
             });
+    }
+
+    /**
+     * Booting/starting runs, only those due a check unless $force.
+     *
+     * @return Builder<ServerRun>
+     */
+    private function dueRuns(bool $force = false): Builder
+    {
+        $interval = (int) config('minecraft.check_interval');
+
+        return ServerRun::query()
+            ->active()
+            ->whereIn('status', [RunStatus::Booting, RunStatus::Starting])
+            ->when(! $force, fn ($query) => $query->where(fn ($q) => $q
+                ->whereNull('checked_at')
+                ->orWhere('checked_at', '<=', now()->subSeconds($interval))));
+    }
+
+    /**
+     * Take this check for ourselves: true when this UPDATE moved checked_at on, false when
+     * another check got there first (it's no longer due).
+     */
+    private function claim(ServerRun $run, int $interval): bool
+    {
+        $now = now();
+
+        $claimed = ServerRun::query()
+            ->whereKey($run->id)
+            ->where(fn ($q) => $q
+                ->whereNull('checked_at')
+                ->orWhere('checked_at', '<=', $now->copy()->subSeconds($interval)))
+            ->update(['checked_at' => $now]) === 1;
+
+        if ($claimed) {
+            $run->checked_at = $now;
+            $run->syncOriginalAttribute('checked_at');
+        }
+
+        return $claimed;
     }
 
     /**

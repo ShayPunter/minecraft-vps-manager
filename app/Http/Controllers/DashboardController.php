@@ -21,7 +21,7 @@ class DashboardController extends Controller
     {
         /** @var User $user */
         $user = $request->user();
-        $launcher->advanceActive();
+        $launcher->advanceSoon();
 
         return Inertia::render('Dashboard', [
             'servers' => ServerPresenter::list(
