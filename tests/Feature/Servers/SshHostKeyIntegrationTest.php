@@ -6,7 +6,6 @@ use App\Servers\RemoteShellException;
 use App\Servers\SshKeyPair;
 use App\Servers\SshRemoteShell;
 use phpseclib3\Net\SSH2;
-use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -14,12 +13,19 @@ use Tests\TestCase;
  * the same one SftpIntegrationTest uses). Our key isn't on that server, so a login that gets
  * past the host-key check ends at "refused"; a wrong pinned key never gets that far.
  * Skipped everywhere else.
+ *
+ * OpenSSH (9.8+) penalises a source for failed and unauthenticated connections and refuses it
+ * once the penalties add up to 15 s (PerSourcePenalties). This class makes few connections
+ * (about 8 s of penalty) and then waits them out, or SftpIntegrationTest, which runs next
+ * against the same server, gets "Connection closed by server".
  */
 class SshHostKeyIntegrationTest extends TestCase
 {
     private string $host;
 
     private int $port;
+
+    private static bool $connected = false;
 
     protected function setUp(): void
     {
@@ -32,6 +38,16 @@ class SshHostKeyIntegrationTest extends TestCase
 
         $this->host = $host;
         $this->port = (int) (getenv('MVM_SFTP_TEST_PORT') ?: 22);
+        self::$connected = true;
+    }
+
+    public static function tearDownAfterClass(): void
+    {
+        if (self::$connected) {
+            sleep(10);
+        }
+
+        parent::tearDownAfterClass();
     }
 
     private function shell(): SshRemoteShell
@@ -39,49 +55,40 @@ class SshHostKeyIntegrationTest extends TestCase
         return new SshRemoteShell('/nonexistent', 'mvm', $this->port);
     }
 
-    private function realHostKey(): string
+    private function login(): string
     {
-        $ssh = new SSH2($this->host, $this->port, 10);
-        $ssh->setPreferredAlgorithms(['hostkey' => ['ssh-ed25519']]);
-        $key = $ssh->getServerPublicHostKey();
-        $ssh->disconnect();
-        $this->assertIsString($key);
-
-        return $key;
+        return SshKeyPair::generate('mvm-test')->privateKey;
     }
 
     /**
-     * @return array<string, array{0: string}>
+     * Expect $call to throw a RemoteShellException containing $message.
      */
-    public static function calls(): array
+    private function assertRefused(callable $call, string $message): void
     {
-        return ['run' => ['run'], 'putFiles' => ['putFiles']];
+        try {
+            $call();
+            $this->fail('Expected a RemoteShellException.');
+        } catch (RemoteShellException $e) {
+            $this->assertStringContainsString($message, $e->getMessage());
+        }
     }
 
-    private function connect(string $method, string $hostKey): void
+    public function test_only_the_pinned_host_key_gets_as_far_as_the_login(): void
     {
-        $login = SshKeyPair::generate('mvm-test')->privateKey;
+        $other = SshKeyPair::generate('someone-else')->publicKey;
 
-        $method === 'run'
-            ? $this->shell()->run($this->host, 'true', 10, $login, $hostKey)
-            : $this->shell()->putFiles($this->host, ['/tmp/x' => ['x', 0600]], $login, $hostKey);
-    }
+        // A different pinned key: refused before anything of ours is sent, for both calls.
+        $this->assertRefused(fn () => $this->shell()->run($this->host, 'true', 10, $this->login(), $other), "didn't show the SSH host key made for this VPS");
+        $this->assertRefused(fn () => $this->shell()->putFiles($this->host, ['/tmp/x' => ['x', 0600]], $this->login(), $other), "didn't show the SSH host key made for this VPS");
 
-    #[DataProvider('calls')]
-    public function test_a_different_host_key_stops_before_logging_in(string $method): void
-    {
-        $this->expectException(RemoteShellException::class);
-        $this->expectExceptionMessage("didn't show the SSH host key made for this VPS");
+        // The server's real key (a comment after it is ignored): on to the login, which this
+        // server refuses because our key isn't on it.
+        $ssh = new SSH2($this->host, $this->port, 10);
+        $ssh->setPreferredAlgorithms(['hostkey' => ['ssh-ed25519']]);
+        $real = $ssh->getServerPublicHostKey();
+        $ssh->disconnect();
+        $this->assertIsString($real);
 
-        $this->connect($method, SshKeyPair::generate('someone-else')->publicKey);
-    }
-
-    #[DataProvider('calls')]
-    public function test_the_right_host_key_gets_as_far_as_the_login(string $method): void
-    {
-        $this->expectException(RemoteShellException::class);
-        $this->expectExceptionMessage('login to '.$this->host.' was refused');
-
-        $this->connect($method, $this->realHostKey().' comment-ignored');
+        $this->assertRefused(fn () => $this->shell()->run($this->host, 'true', 10, $this->login(), $real.' comment-ignored'), 'SSH login to '.$this->host.' was refused');
     }
 }
