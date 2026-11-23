@@ -10,6 +10,10 @@ use App\Dns\DnsProvider;
 use App\Dns\FakeDnsProvider;
 use App\Minecraft\FakePlayers;
 use App\Minecraft\FakeVersions;
+use App\Minecraft\Modrinth\FakeModrinth;
+use App\Minecraft\Modrinth\ModLoaders;
+use App\Minecraft\Modrinth\ModrinthSource;
+use App\Minecraft\Modrinth\OnlineModrinth;
 use App\Minecraft\MojangPlayers;
 use App\Minecraft\OnlineVersions;
 use App\Minecraft\PlayerLookup;
@@ -85,6 +89,15 @@ class AppServiceProvider extends ServiceProvider
             }
 
             return new OnlineVersions;
+        });
+
+        // Tests and E2E never ask Modrinth or the loaders' Mavens (#5352).
+        $this->app->singleton(ModrinthSource::class, function ($app): ModrinthSource {
+            if ($app->environment('testing', 'e2e')) {
+                return new FakeModrinth($app->make(CacheRepository::class));
+            }
+
+            return new OnlineModrinth(new ModLoaders($app->make(VersionSource::class)));
         });
 
         // Tests and E2E never ask Mojang about player names (#5377).

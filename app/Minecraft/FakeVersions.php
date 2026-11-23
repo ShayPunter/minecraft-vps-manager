@@ -37,7 +37,7 @@ class FakeVersions implements VersionSource
     {
         $this->guard();
 
-        return $software->installs() ? self::VERSIONS : [];
+        return in_array($software, Software::versioned(), true) ? self::VERSIONS : [];
     }
 
     public function javaFor(Software $software, string $version): int

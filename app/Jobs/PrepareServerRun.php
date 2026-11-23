@@ -20,7 +20,8 @@ class PrepareServerRun implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 1500;
+    // Above minecraft.pack_prepare_timeout (#5352), below the queue's retry_after (3600).
+    public int $timeout = 2700;
 
     public function __construct(public readonly int $runId)
     {

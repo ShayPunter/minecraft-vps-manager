@@ -10,6 +10,12 @@ namespace App\Minecraft;
 class Installer
 {
     /**
+     * Modpacks (#5352): prepare.sh writes mvm-launch.sh when it installs the pack. It execs
+     * Java with the pack's user_jvm_args.txt, where the memory flags go.
+     */
+    public const PACK_START_COMMAND = 'sh mvm-launch.sh';
+
+    /**
      * Java heap for a VPS with this much RAM: leave the OS and Java's own overhead at least
      * 1 GB (a fifth of the RAM on bigger types), in steps of 256 MB, never below 1 GB.
      */

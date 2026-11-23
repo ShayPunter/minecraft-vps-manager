@@ -39,7 +39,8 @@ class OnlineVersions implements VersionSource
             Software::Vanilla => array_keys($this->mojang()),
             Software::Paper => array_keys($this->paper()),
             Software::Fabric => $this->fabricGames(),
-            Software::Custom => [],
+            // Modpacks (#5352) name their own version.
+            Software::Custom, Software::PackUrl, Software::Modrinth => [],
         };
     }
 
@@ -69,7 +70,7 @@ class OnlineVersions implements VersionSource
                 Software::Vanilla => new InstallPlan($software, $version, "Vanilla {$version}", [$this->vanillaJar($version)]),
                 Software::Paper => $this->paperPlan($version),
                 Software::Fabric => $this->fabricPlan($version),
-                Software::Custom => throw new InvalidArgumentException('Custom servers have nothing to install.'),
+                Software::Custom, Software::PackUrl, Software::Modrinth => throw new InvalidArgumentException('Only Vanilla, Paper and Fabric install from a version list.'),
             };
         } catch (InvalidArgumentException $e) {
             throw new VersionSourceException("The {$software->label()} download for {$version} looks wrong: {$e->getMessage()}");

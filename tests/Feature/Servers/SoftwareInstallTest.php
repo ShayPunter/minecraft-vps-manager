@@ -102,6 +102,8 @@ class SoftwareInstallTest extends TestCase
                     ['value' => 'vanilla', 'label' => 'Vanilla'],
                     ['value' => 'paper', 'label' => 'Paper'],
                     ['value' => 'fabric', 'label' => 'Fabric'],
+                    ['value' => 'pack_url', 'label' => 'Modpack from a server-pack URL'],
+                    ['value' => 'modrinth', 'label' => 'Modrinth modpack'],
                     ['value' => 'custom', 'label' => 'My own start command'],
                 ])
                 ->where('software.versions.paper', ['26.3', '26.2', '1.21.11'])

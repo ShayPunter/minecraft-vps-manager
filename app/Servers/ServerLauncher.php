@@ -10,6 +10,10 @@ use App\Enums\RunStatus;
 use App\Jobs\PrepareServerRun;
 use App\Jobs\ProvisionServerRun;
 use App\Jobs\StopServerRun;
+use App\Minecraft\Modrinth\ModrinthException;
+use App\Minecraft\Modrinth\ModrinthSource;
+use App\Minecraft\Packs\PackPlan;
+use App\Minecraft\Software;
 use App\Minecraft\VersionSource;
 use App\Minecraft\VersionSourceException;
 use App\Models\Server;
@@ -54,6 +58,7 @@ class ServerLauncher
         private readonly S3Transfers $s3,
         private readonly RunLog $log,
         private readonly VersionSource $versions,
+        private readonly ModrinthSource $modrinth,
     ) {}
 
     /**
@@ -500,7 +505,27 @@ class ServerLauncher
         // After the first stop the whole folder is saved, so later starts never reinstall.
         $install = null;
 
-        if ($archive === null && $server->software->installs() && $server->minecraft_version !== null) {
+        if ($archive === null && $server->software === Software::PackUrl && $server->pack_url !== null) {
+            // A server-pack zip (#5352): its URL was checked when it was saved.
+            $install = PackPlan::forUrl($server->pack_url);
+        } elseif ($archive === null && $server->software === Software::Modrinth && $server->modrinth_version_id !== null) {
+            // A Modrinth pack (#5352): its .mrpack is read now, so the index is the current one.
+            try {
+                $install = $this->modrinth->plan($server->modrinth_version_id, (string) ($server->modrinth_title ?? $server->name));
+            } catch (ModrinthException $e) {
+                if ($e->permanent) {
+                    $this->giveUp($run, "The Modrinth pack can't be installed: {$e->getMessage()}");
+
+                    return;
+                }
+
+                Log::info("Run {$run->id}: couldn't read the Modrinth pack, trying again: {$e->getMessage()}");
+                $this->log->append($run, 'prepare', "Couldn't read the Modrinth pack yet, trying again: {$e->getMessage()}");
+                $this->retryPrepare($run);
+
+                return;
+            }
+        } elseif ($archive === null && in_array($server->software, Software::versioned(), true) && $server->minecraft_version !== null) {
             try {
                 $install = $this->versions->plan($server->software, $server->minecraft_version);
             } catch (VersionSourceException $e) {
@@ -517,7 +542,8 @@ class ServerLauncher
 
         try {
             $this->shell->putFiles($run->ipv4, WorldSync::prepareFiles($server, $archive, $storage, $downloadUrl, $install) + $shipper, $run->ssh_private_key);
-            $result = $this->shell->run($run->ipv4, WorldSync::PREPARE_COMMAND, (int) config('minecraft.prepare_timeout'), $run->ssh_private_key);
+            $timeout = (int) config($install instanceof PackPlan ? 'minecraft.pack_prepare_timeout' : 'minecraft.prepare_timeout');
+            $result = $this->shell->run($run->ipv4, WorldSync::PREPARE_COMMAND, $timeout, $run->ssh_private_key);
         } catch (RemoteShellException $e) {
             Log::info("Run {$run->id}: VPS not ready for the world yet, trying again: {$e->getMessage()}");
             $this->retryPrepare($run);

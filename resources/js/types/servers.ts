@@ -85,6 +85,12 @@ export type ServerDefinition = {
     eula_accepted_by?: string | null;
     software: SoftwareValue;
     minecraft_version: string | null;
+    /** Modpacks (#5352). */
+    pack_url?: string | null;
+    modrinth_project_id?: string | null;
+    modrinth_version_id?: string | null;
+    modrinth_title?: string | null;
+    heap_mb?: number | null;
 };
 
 /** App\Servers\ServerConfigForm::props() (#5377). */
@@ -109,7 +115,13 @@ export type ServerConfig = {
     has_world: boolean;
 };
 
-export type SoftwareValue = 'custom' | 'vanilla' | 'paper' | 'fabric';
+export type SoftwareValue =
+    | 'custom'
+    | 'vanilla'
+    | 'paper'
+    | 'fabric'
+    | 'pack_url'
+    | 'modrinth';
 
 /** What App\Http\Controllers\Admin\ServerController::softwareOptions() sends (#5351). */
 export type SoftwareOptions = {

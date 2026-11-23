@@ -82,5 +82,12 @@ class E2ESeeder extends Seeder
             'email' => 'share-admin@example.com',
             'created_at' => now()->subYear(),
         ]);
+
+        // modpack.spec (#5352), its own admin for Fortify's login limit.
+        User::factory()->admin()->create([
+            'name' => 'Morgan Modpack',
+            'email' => 'modpack-admin@example.com',
+            'created_at' => now()->subYear(),
+        ]);
     }
 }

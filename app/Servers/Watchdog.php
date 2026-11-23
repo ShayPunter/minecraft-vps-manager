@@ -89,6 +89,15 @@ class Watchdog
             ->with('server')
             ->get()
             ->each(function (ServerRun $run) use ($minutes): void {
+                // A first start that installs a modpack gets longer (#5352).
+                if ($run->server->software->isPack() && $run->server->current_world_archive_id === null) {
+                    $minutes = max($minutes, (int) config('minecraft.pack_boot_timeout_minutes'));
+
+                    if ($run->created_at !== null && $run->created_at->gt(now()->subMinutes($minutes))) {
+                        return;
+                    }
+                }
+
                 $error = "It wasn't online within {$minutes} minutes of starting, so the VPS was deleted. "
                     .'Check the start command and the server type.';
 
